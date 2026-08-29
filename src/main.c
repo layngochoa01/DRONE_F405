@@ -315,8 +315,10 @@ int main(){
                 last_log = now;
                 // HC05_SendIMU(&data);
 
-                const Attitude_t *att = Attitude_Get();
-                UART5_WriteF("R: %.2f P: %.2f Y: %.2f\r\n", att->roll, att->pitch, att->yaw );
+                // const Attitude_t *att = Attitude_Get();
+                // UART5_WriteF("R: %.2f P: %.2f Y: %.2f\r\n", att->roll, att->pitch, att->yaw );
+                const Quaternion_t *q = Quaternion_Get();
+                HC05_LogQuaternion(q);
             }
         }
         else led_on(LED_BLUE_PIN);

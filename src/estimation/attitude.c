@@ -29,3 +29,8 @@ const Attitude_t *Attitude_Get(void)
 {
     return IMU_GetAttitude(&s_imu);
 }
+
+const Quaternion_t *Quaternion_Get(void)
+{
+     return IMU_GetQuaternion(&s_imu);
+}

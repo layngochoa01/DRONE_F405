@@ -1,5 +1,6 @@
 #include "hc05.h"
 #include "uart5.h"
+
 #include <string.h>
 #include <stdio.h>
 
@@ -53,6 +54,10 @@ void HC05_SendRawIMU(const ICM42605_RawData *raw){
 void HC05_SendAttitude(float roll, float pitch, float yaw)
 {
     UART5_WriteF("R:%6.2f P:%6.2f Y:%6.2f\r\n", roll, pitch, yaw);
+}
+
+void HC05_LogQuaternion(const Quaternion_t *q){
+    UART5_WriteF("Q: w=%.4f x=%.4f y=%.4f z=%.4f\r\n", q->q0, q->q1, q->q2, q->q3);
 }
 
 HC05_StreamState HC05_Poll(void)

@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include "icm42605.h"
-
+#include "../estimation/attitude.h"
 /* =========================================================
  * HC-05 Driver
  * Giao tiếp qua UART5 (PC12=TX, PD2=RX)
@@ -33,17 +33,16 @@ typedef enum {
 } HC05_CalibCmd;
 
 void HC05_Init(uint32_t apb1_clk, uint32_t baudrate);
-
 void HC05_SendIMU(const ICM42605_Data *data);
-
 void HC05_SendRawIMU(const ICM42605_RawData *raw);
-
 void HC05_SendAttitude(float roll, float pitch, float yaw);
+void HC05_LogQuaternion(const Quaternion_t *q);
 
 HC05_StreamState HC05_Poll(void);
 
 HC05_StreamState HC05_GetStreamState(void);
 
 HC05_CalibCmd    HC05_GetCalibCmd(void);
+
 
 #endif 
