@@ -1,5 +1,5 @@
-#include "i2c.h"
-#include "stm32f4xx.h"   // header CMSIS bạn đang dùng cho project — đổi tên nếu khác
+#include "I2C.h"
+#include "register.h"   
 
 #define I2C_TIMEOUT 100000UL
 
@@ -17,18 +17,20 @@ void I2C1_Init(void)
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
     RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
 
-    GPIOB->MODER &= ~((3U << (8*2)) | (3U << (7*2)));
-    GPIOB->MODER |=  ((2U << (8*2)) | (2U << (7*2)));   
+    GPIOB->MODER &= ~((3U << (I2C1_SCL_PIN*2)) | (3U << (I2C1_SDA_PIN*2)));
+    GPIOB->MODER |=  ((GPIO_MODE_AF << (I2C1_SCL_PIN*2)) | (GPIO_MODE_AF << (I2C1_SDA_PIN*2)));   
 
-    GPIOB->OTYPER |= (1U << 8) | (1U << 7);             
+    GPIOB->OTYPER |= (1U << I2C1_SCL_PIN) | (1U << I2C1_SDA_PIN);             
 
-    GPIOB->OSPEEDR |= (3U << (8*2)) | (3U << (7*2));    
+    GPIOB->OSPEEDR |= (GPIO_SPEED_HIGH << (I2C1_SCL_PIN*2)) | (GPIO_SPEED_HIGH << (I2C1_SDA_PIN*2));    
 
-    GPIOB->PUPDR &= ~((3U << (8*2)) | (3U << (7*2)));
-    GPIOB->PUPDR |=  ((1U << (8*2)) | (1U << (7*2)));   
+    GPIOB->PUPDR &= ~((3U << (I2C1_SCL_PIN*2)) | (3U << (I2C1_SDA_PIN*2)));
+    GPIOB->PUPDR |=  ((GPIO_PUPD_UP << (I2C1_SCL_PIN*2)) | (GPIO_PUPD_UP << (I2C1_SDA_PIN*2)));  
 
-    GPIOB->AFR[1] &= ~((0xF << ((8-8)*4)) | (0xF << ((7-8)*4)));
-    GPIOB->AFR[1] |=  ((4U  << ((8-8)*4)) | (4U  << ((7-8)*4)));
+    GPIOB->AFR[1] &= ~(0xFU << ((I2C1_SCL_PIN - 8) * 4));
+    GPIOB->AFR[1] |=  (GPIO_AF4_I2C1 << ((I2C1_SCL_PIN - 8) * 4));
+    GPIOB->AFR[0] &= ~(0xFU << (I2C1_SDA_PIN * 4));
+    GPIOB->AFR[0] |=  (GPIO_AF4_I2C1 << (I2C1_SDA_PIN * 4));
 
     I2C1->CR1 |= I2C_CR1_SWRST;
     I2C1->CR1 &= ~I2C_CR1_SWRST;
@@ -45,7 +47,7 @@ static bool I2C1_Start(uint8_t devAddr, uint8_t rw)
     I2C1->CR1 |= I2C_CR1_START;
     if (!I2C1_WaitFlag(&I2C1->SR1, I2C_SR1_SB, 1)) return false;
 
-    I2C1->DR = (devAddr << 1) | rw;
+    I2C1->DR = (uint32_t)((devAddr << 1) | rw);
     if (!I2C1_WaitFlag(&I2C1->SR1, I2C_SR1_ADDR, 1)) return false;
 
     (void)I2C1->SR1;
