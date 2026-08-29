@@ -20,28 +20,22 @@
  * BASE ADDRESS - RM0090 Table 1 (Memory Map)
  * ========================================================= */
 
-/* AHB1 Bus - GPIO, DMA, RCC */
 #define PERIPH_BASE         0x40000000UL
 #define AHB1_BASE           (PERIPH_BASE + 0x00020000UL)
 #define APB2_BASE           (PERIPH_BASE + 0x00010000UL)
 #define APB1_BASE           (PERIPH_BASE + 0x00000000UL)
 
-/* GPIO base addresses - RM0090 Table 1 */
-#define GPIOA_BASE          (AHB1_BASE + 0x0000UL)   /* 0x40020000 */
-#define GPIOB_BASE          (AHB1_BASE + 0x0400UL)   /* 0x40020400 */
-#define GPIOC_BASE          (AHB1_BASE + 0x0800UL)   /* 0x40020800 */
-#define GPIOD_BASE          (AHB1_BASE + 0x0C00UL)   /* 0x40020C00 */
+#define GPIOA_BASE          (AHB1_BASE + 0x0000UL)   
+#define GPIOB_BASE          (AHB1_BASE + 0x0400UL)   
+#define GPIOC_BASE          (AHB1_BASE + 0x0800UL)   
+#define GPIOD_BASE          (AHB1_BASE + 0x0C00UL)   
 
-/* RCC - Reset and Clock Control */
-#define RCC_BASE            (AHB1_BASE + 0x3800UL)   /* 0x40023800 */
+#define RCC_BASE            (AHB1_BASE + 0x3800UL)  
+#define SPI1_BASE           (APB2_BASE + 0x3000UL)   
+#define I2C1_BASE           (APB1_BASE + 0x5400UL)
 
-/* SPI1 - APB2 bus */
-#define SPI1_BASE           (APB2_BASE + 0x3000UL)   /* 0x40013000 */
-
-/* UART5 - APB1 bus */
-#define UART5_BASE          (APB1_BASE + 0x5000UL)   /* 0x40005000 */
-
-#define DMA2_BASE           (AHB1_BASE + 0x6400UL)   /* 0x40026400 */
+#define UART5_BASE          (APB1_BASE + 0x5000UL)   
+#define DMA2_BASE           (AHB1_BASE + 0x6400UL)   
 
 /* =========================================================
  * RCC REGISTERS - RM0090 Section 6.3
@@ -93,7 +87,7 @@ typedef struct {
 
 /* RCC APB2ENR bits - RM0090 6.3.14 */
 #define RCC_APB2ENR_SPI1EN      (1U << 12)  /* SPI1 clock enable */
-
+#define RCC_APB1ENR_I2C1EN      (1U << 21)
 /* RCC CR bits */
 #define RCC_CR_HSION            (1U << 0)   /* HSI oscillator ON */
 #define RCC_CR_HSIRDY           (1U << 1)   /* HSI ready */
@@ -125,15 +119,15 @@ typedef struct {
  * GPIO REGISTERS - RM0090 Section 8.4
  * ========================================================= */
 typedef struct {
-    volatile uint32_t MODER;    /* 0x00 - Mode register */
-    volatile uint32_t OTYPER;   /* 0x04 - Output type register */
-    volatile uint32_t OSPEEDR;  /* 0x08 - Output speed register */
-    volatile uint32_t PUPDR;    /* 0x0C - Pull-up/pull-down register */
-    volatile uint32_t IDR;      /* 0x10 - Input data register */
-    volatile uint32_t ODR;      /* 0x14 - Output data register */
-    volatile uint32_t BSRR;     /* 0x18 - Bit set/reset register */
-    volatile uint32_t LCKR;     /* 0x1C - Configuration lock register */
-    volatile uint32_t AFR[2];   /* 0x20-0x24 - Alternate function low/high */
+    volatile uint32_t MODER;    
+    volatile uint32_t OTYPER;   
+    volatile uint32_t OSPEEDR;  
+    volatile uint32_t PUPDR;    
+    volatile uint32_t IDR;      
+    volatile uint32_t ODR;      
+    volatile uint32_t BSRR;     
+    volatile uint32_t LCKR;     
+    volatile uint32_t AFR[2];   
 } GPIO_TypeDef;
 
 #define GPIOA   ((GPIO_TypeDef *) GPIOA_BASE)
@@ -141,40 +135,32 @@ typedef struct {
 #define GPIOC   ((GPIO_TypeDef *) GPIOC_BASE)
 #define GPIOD   ((GPIO_TypeDef *) GPIOD_BASE)
 
-/* GPIO MODER values (2 bits per pin) - RM0090 8.4.1 */
-#define GPIO_MODE_INPUT     0x0U    /* 00: Input */
-#define GPIO_MODE_OUTPUT    0x1U    /* 01: Output */
-#define GPIO_MODE_AF        0x2U    /* 10: Alternate function */
-#define GPIO_MODE_ANALOG    0x3U    /* 11: Analog */
+#define GPIO_MODE_INPUT     0x0U    
+#define GPIO_MODE_OUTPUT    0x1U   
+#define GPIO_MODE_AF        0x2U    
+#define GPIO_MODE_ANALOG    0x3U   
 
-/* GPIO OSPEEDR values - RM0090 8.4.3 */
+
 #define GPIO_SPEED_LOW      0x0U
 #define GPIO_SPEED_MEDIUM   0x1U
 #define GPIO_SPEED_HIGH     0x2U
 #define GPIO_SPEED_VERY_HIGH 0x3U
 
-/* GPIO PUPDR values - RM0090 8.4.4 */
-#define GPIO_PUPD_NONE      0x0U    /* No pull */
-#define GPIO_PUPD_UP        0x1U    /* Pull-up */
-#define GPIO_PUPD_DOWN      0x2U    /* Pull-down */
 
-/* GPIO BSRR - Bit Set/Reset Register
- * Bit [15:0]  = BS (Set)   → ghi 1 để SET pin HIGH
- * Bit [31:16] = BR (Reset) → ghi 1 để SET pin LOW
- * Đây là atomic operation, an toàn hơn đọc-sửa-ghi ODR
- */
+#define GPIO_PUPD_NONE      0x0U    
+#define GPIO_PUPD_UP        0x1U    
+#define GPIO_PUPD_DOWN      0x2U    
+
 #define GPIO_BSRR_SET(pin)      (1U << (pin))
 #define GPIO_BSRR_RESET(pin)    (1U << ((pin) + 16))
 
-/* Alternate Function numbers - RM0090 Table 9 */
-#define GPIO_AF5_SPI1   5U  /* SPI1 dùng AF5 */
+#define GPIO_AF5_SPI1   5U  
+#define GPIO_AF4_I2C1   4U
 
-/* RCC APB1ENR bits - RM0090 6.3.13 */
-#define RCC_APB1ENR_UART5EN     (1U << 20)  /* UART5 clock enable */
+#define RCC_APB1ENR_UART5EN     (1U << 20)  
 
-/* Alternate Function numbers - RM0090 Table 9 */
-#define GPIO_AF8_UART5      8U  /* UART5 dùng AF8 */
 
+#define GPIO_AF8_UART5      8U  /
 /* =========================================================
  * SPI REGISTERS - RM0090 Section 28.5
  * ========================================================= */
@@ -214,6 +200,38 @@ typedef struct {
 #define SPI_SR_TXE          (1U << 1)   /* Transmit buffer empty */
 #define SPI_SR_BSY          (1U << 7)   /* Busy flag */
 
+/* =========================================================
+ * I2C REGISTERS - RM0090 Section 27.6
+ * ========================================================= */
+typedef struct {
+    volatile uint32_t CR1;      /* 0x00 - Control register 1 */
+    volatile uint32_t CR2;      /* 0x04 - Control register 2 */
+    volatile uint32_t OAR1;     /* 0x08 - Own address register 1 */
+    volatile uint32_t OAR2;     /* 0x0C - Own address register 2 */
+    volatile uint32_t DR;       /* 0x10 - Data register */
+    volatile uint32_t SR1;      /* 0x14 - Status register 1 */
+    volatile uint32_t SR2;      /* 0x18 - Status register 2 */
+    volatile uint32_t CCR;      /* 0x1C - Clock control register */
+    volatile uint32_t TRISE;    /* 0x20 - Rise time register */
+    volatile uint32_t FLTR;     /* 0x24 - Noise filter register */
+} I2C_TypeDef;
+
+#define I2C1    ((I2C_TypeDef *) I2C1_BASE)
+#define I2C_CR1_PE          (1U << 0)    
+#define I2C_CR1_START       (1U << 8)    
+#define I2C_CR1_STOP        (1U << 9)    
+#define I2C_CR1_ACK         (1U << 10)   
+#define I2C_CR1_SWRST       (1U << 15)   
+
+#define I2C_SR1_SB          (1U << 0)    
+#define I2C_SR1_ADDR        (1U << 1)    
+#define I2C_SR1_BTF         (1U << 2)    
+#define I2C_SR1_RXNE        (1U << 6)   
+#define I2C_SR1_TXE         (1U << 7)    
+#define I2C_SR1_AF          (1U << 10)  
+
+#define I2C1_SCL_PIN        8U  
+#define I2C1_SDA_PIN        7U
 /* =========================================================
  * USART/UART REGISTERS - RM0090 Section 30.6
  * ========================================================= */
