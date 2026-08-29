@@ -125,7 +125,6 @@ typedef enum {
     ICM_ERR_BUSY            // Cảm biến đang bận xử lý lượt đọc trước
 } ICM_Status;
 
-/* Raw sensor data (thẳng từ register) */
 typedef struct {
     int16_t accel_x;
     int16_t accel_y;
@@ -136,31 +135,17 @@ typedef struct {
     int16_t temp;
 } ICM42605_RawData;
 
-/* Dữ liệu đã quy đổi ra đơn vị thực */
 typedef struct {
-    float accel_x;  /* m/s² */
+    float accel_x;  
     float accel_y;
     float accel_z;
-    float gyro_x;   /* deg/s */
+    float gyro_x;   
     float gyro_y;
     float gyro_z;
-    float temp;     /* °C */
+    float temp;    
 } ICM42605_Data;
 
-
-typedef enum {
-    ALIGN_CW0,    /* không xoay */
-    ALIGN_CW90,
-    ALIGN_CW180,
-    ALIGN_CW270,
-    ALIGN_CW0_FLIP,   /* chip úp ngược, Z đảo */
-    ALIGN_CW90_FLIP,
-    ALIGN_CW180_FLIP,
-    ALIGN_CW270_FLIP,
-    MY_CASE_NED
-} BoardAlignment_t;
-
-void ICM42605_RemapAxes(ICM42605_Data *data, BoardAlignment_t align);
+void ICM42605_RemapAxes(ICM42605_Data *data);
 
 ICM_Status ICM42605_Init(void);
 
@@ -204,13 +189,12 @@ typedef enum {
     CALIB_ERR_PARAM
 } ICM_CalibStatus_t;
 
-/* Calibrate gyro - học INAV: reject sample lệch > threshold */
+
 ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t samples);
 
-/* Calibrate accel 1 vị trí (nằm ngang) - offset only */
+
 ICM_CalibStatus_t ICM42605_CalibrateAccel(ICM_Calibration_t *cal, uint16_t samples);
 
-/* Áp dụng calibration */
 void ICM42605_ApplyCalibration(ICM42605_Data *data, const ICM_Calibration_t *cal);
 
-#endif /* ICM42605_H */
+#endif 

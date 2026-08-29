@@ -152,8 +152,6 @@ uint8_t ICM42605_WhoAmI(void)
 
 void ICM42605_ReadRaw(ICM42605_RawData *data)
 {
-    /* Burst read 14 bytes: TEMP(2) + ACCEL(6) + GYRO(6)
-     * Bắt đầu từ TEMP_DATA1 (0x1D) */
     uint8_t buf[14];
     ICM_ReadBurst(ICM_REG_TEMP_DATA1, buf, 14);
 
@@ -174,8 +172,7 @@ void ICM42605_Convert(const ICM42605_RawData *raw, ICM42605_Data *data)
     data->accel_y = (float)raw->accel_y * accel_scale;
     data->accel_z = (float)raw->accel_z * accel_scale;
 
-    /* Gyro: FSR ±2000dps → sensitivity = 16.4 LSB/(deg/s)
-     * Quy đổi sang deg/s: chia cho 16.4 */
+    /* Gyro: FSR ±2000dps → sensitivity = 16.4 LSB/(deg/s)*/
     const float gyro_scale = 1.0f / 16.4f;
     data->gyro_x = (float)raw->gyro_x * gyro_scale;
     data->gyro_y = (float)raw->gyro_y * gyro_scale;
@@ -249,9 +246,9 @@ ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t sample
 
     double sum_gx = 0, sum_gy = 0, sum_gz = 0;
     double mean_gx = 0, mean_gy = 0, mean_gz = 0;
-    uint16_t total     = 0;   /* tổng samples đọc */
-    uint16_t valid     = 0;   /* samples hợp lệ   */
-    uint16_t max_total = samples * 3; /* cho phép thử 3x */
+    uint16_t total     = 0;   
+    uint16_t valid     = 0;   
+    uint16_t max_total = samples * 3; 
 
     ICM42605_Data data;
 
@@ -259,12 +256,11 @@ ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t sample
 
     while (total < max_total && valid < samples) {
 
-        /* Chờ data mới từ DMA */
         if (!ICM42605_IsDataReady()) continue;
         ICM42605_GetLatestData(&data);
+        ICM42605_RemapAxes(&data);
         total++;
 
-        /* Pass 1: sample đầu tiên làm baseline */
         if (valid == 0) {
             mean_gx = data.gyro_x;
             mean_gy = data.gyro_y;
@@ -276,9 +272,6 @@ ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t sample
             continue;
         }
 
-        /* Học INAV MORON_THRESHOLD:
-         * So sample với mean hiện tại
-         * Nếu lệch quá → board đang rung → reject */
         float dx = fabsf(data.gyro_x - (float)mean_gx);
         float dy = fabsf(data.gyro_y - (float)mean_gy);
         float dz = fabsf(data.gyro_z - (float)mean_gz);
@@ -287,7 +280,6 @@ ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t sample
             dy > CALIB_GYRO_MORON_THRESHOLD ||
             dz > CALIB_GYRO_MORON_THRESHOLD)
         {
-            /* Sample bị reject - reset để bắt đầu lại */
             sum_gx = 0; sum_gy = 0; sum_gz = 0;
             mean_gx = 0; mean_gy = 0; mean_gz = 0;
             valid = 0;
@@ -295,19 +287,17 @@ ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t sample
             continue;
         }
 
-        /* Sample hợp lệ - cộng dồn */
         sum_gx += data.gyro_x;
         sum_gy += data.gyro_y;
         sum_gz += data.gyro_z;
         valid++;
 
-        /* Cập nhật running mean */
+       
         mean_gx = sum_gx / valid;
         mean_gy = sum_gy / valid;
         mean_gz = sum_gz / valid;
     }
 
-    /* Kiểm tra đủ samples không */
     if (valid < CALIB_MIN_VALID_SAMPLES) {
         UART5_WriteF("Gyro calib FAILED: board not still (%d valid)\r\n",
                      valid);
@@ -350,6 +340,7 @@ ICM_CalibStatus_t ICM42605_CalibrateAccel(ICM_Calibration_t *cal, uint16_t sampl
 
         if (!ICM42605_IsDataReady()) continue;
         ICM42605_GetLatestData(&data);
+        ICM42605_RemapAxes(&data);
         total++;
 
         if (valid == 0) {
@@ -396,9 +387,9 @@ ICM_CalibStatus_t ICM42605_CalibrateAccel(ICM_Calibration_t *cal, uint16_t sampl
     }
 
 
-    cal->ax_offset = (float)mean_ax;          /*  0    */
-    cal->ay_offset = (float)mean_ay;          /* 0    */
-    cal->az_offset = (float)mean_az - 9.81f;  /*  9.81 */
+    cal->ax_offset = (float)mean_ax;          
+    cal->ay_offset = (float)mean_ay;         
+    cal->az_offset = (float)mean_az - 9.81f;  
 
     cal->ax_gain = 1.0f;
     cal->ay_gain = 1.0f;
@@ -431,51 +422,14 @@ void ICM42605_ApplyCalibration(ICM42605_Data *data, const ICM_Calibration_t *cal
     }
 }
 
-void ICM42605_RemapAxes(ICM42605_Data *data, BoardAlignment_t align)
+void ICM42605_RemapAxes(ICM42605_Data *data)
 {
-    float ax = data->accel_x, ay = data->accel_y, az = data->accel_z;
-    float gx = data->gyro_x,  gy = data->gyro_y,  gz = data->gyro_z;
+    float ax = - data->accel_y, ay = - data->accel_x, az = data->accel_z;
+    float gx = - data->gyro_y,  gy = - data->gyro_x,  gz = data->gyro_z;
 
-    switch (align) {
-        case ALIGN_CW0:
-            break;
-        case ALIGN_CW90:
-            data->accel_x =  ay; data->accel_y = -ax;
-            data->gyro_x  =  gy; data->gyro_y  = -gx;
-            break;
-        case ALIGN_CW180:
-            data->accel_x = -ax; data->accel_y = -ay;
-            data->gyro_x  = -gx; data->gyro_y  = -gy;
-            break;
-        case ALIGN_CW270:
-            data->accel_x = -ay; data->accel_y =  ax;
-            data->gyro_x  = -gy; data->gyro_y  =  gx;
-            break;
-        case ALIGN_CW0_FLIP:
-            data->accel_x =  ax;  data->accel_y = -ay;  data->accel_z = -az;
-            data->gyro_x  =  gx;  data->gyro_y  = -gy;   data->gyro_z  = -gz;
-            break;
+    data->accel_x = ax; data->accel_y = ay; data->accel_z = az;
+    data->gyro_x = gx; data->gyro_y = gy; data->gyro_z = gz;
 
-        case ALIGN_CW90_FLIP:
-            data->accel_x = -ay;  data->accel_y = -ax;  data->accel_z = -az;
-            data->gyro_x  = -gy;  data->gyro_y  = -gx;   data->gyro_z  = -gz;
-            break;
-
-        case ALIGN_CW180_FLIP:
-            data->accel_x = -ax;  data->accel_y =  ay;  data->accel_z = -az;
-            data->gyro_x  = -gx;  data->gyro_y  =  gy;   data->gyro_z  = -gz;
-            break;
-
-        case ALIGN_CW270_FLIP:
-            data->accel_x =  ay;  data->accel_y =  ax;  data->accel_z = -az;
-            data->gyro_x  =  gy;  data->gyro_y  =  gx;   data->gyro_z  = -gz;
-            break;
-        case MY_CASE_NED:
-            data->accel_x = -ay;  data->accel_y = -ax;  data->accel_z = az;
-            data->gyro_x  = -gy;  data->gyro_y  = -gx;   data->gyro_z  = -gz;
-            break;
-        default: break;
-    }
 }
 
 

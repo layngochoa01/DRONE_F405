@@ -18,7 +18,7 @@
  *   "CALIB_ERASE\n"  → xóa calib data trong Flash
  * ========================================================= */
 
-/* Trạng thái stream */
+
 typedef enum {
     HC05_STREAM_STOP = 0,
     HC05_STREAM_RUN  = 1,
@@ -29,11 +29,14 @@ typedef enum {
     HC05_CMD_CALIB_GYRO  = 1,
     HC05_CMD_CALIB_ACCEL = 2,
     HC05_CMD_CALIB_ERASE = 3,
+    HC05_CMD_CALIB = 4,
 } HC05_CalibCmd;
 
 void HC05_Init(uint32_t apb1_clk, uint32_t baudrate);
 
 void HC05_SendIMU(const ICM42605_Data *data);
+
+void HC05_SendRawIMU(const ICM42605_RawData *raw);
 
 void HC05_SendAttitude(float roll, float pitch, float yaw);
 

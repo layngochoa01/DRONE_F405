@@ -21,15 +21,15 @@ C_SRCS = \
 	src/drivers/timer.c \
 	src/drivers/flash_storage.c \
 	src/syscalls.c	\
-	src/flight/imu.c \
-	src/flight/filter.c \
-	src/flight/attitude.c
+	src/estimation/imu.c \
+	src/estimation/filter.c \
+	src/estimation/attitude.c
 
 C_INCLUDES = \
     -Iinclude \
     -Isrc/drivers \
 	-Isrc/sensors \
-	-Isrc/flight
+	-Isrc/estimation
 
 AS_SRCS = startup.s
 

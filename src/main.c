@@ -23,12 +23,10 @@
 #include "timer.h"
 #include "attitude.h"
 #include "flash_storage.h"
+#include "filter.h"
 
-#define IMU_DT  0.01f
-/* =========================================================
- * SYSTICK
- * ========================================================= */
 static volatile uint32_t ms_tick = 0;
+static ICM_Calibration_t s_cal;   
 
 void systick_handler(void)
 {
@@ -46,17 +44,6 @@ void delay_ms(uint32_t ms)
     while ((ms_tick - start) < ms) {}
 }
 
-/* =========================================================
- * CLOCK - 168MHz từ HSI 16MHz qua PLL
- *
- * SYSCLK = (HSI / M) * N / P
- *        = (16 / 16) * 336 / 2
- *        = 168MHz
- *
- * AHB  = 168MHz (GPIO, DMA)
- * APB1 = 42MHz  (max 42MHz)
- * APB2 = 84MHz  (SPI1)
- * ========================================================= */
 static void clock_init(void)
 {
     FLASH_ACR = FLASH_ACR_LATENCY_5WS | FLASH_ACR_PRFTEN
@@ -80,11 +67,6 @@ static void clock_init(void)
     while ((RCC->CFGR & (3U << 2)) != RCC_CFGR_SWS_PLL) {}
 }
  
-
-/* =========================================================
- * SYSTICK INIT - 1ms tại 168MHz
- * LOAD = 168,000,000 / 1000 - 1 = 167,999
- * ========================================================= */
 static void systick_init(void)
 {
     SYSTICK->LOAD = 168000U - 1U;
@@ -92,9 +74,6 @@ static void systick_init(void)
     SYSTICK->CTRL = SYSTICK_CTRL_ENABLE | SYSTICK_CTRL_TICKINT | SYSTICK_CTRL_CLKSRC;
 }
 
-/* =========================================================
- * LED 
- * ========================================================= */
 static void led_init(void)
 {
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
@@ -126,9 +105,6 @@ static inline void led_toggle(uint8_t pin)
     }
 }
 
-/* =========================================================
- * HANDLER
- * ========================================================= */
 void hardfault_handler(void)
 {
     while (1) {
@@ -147,18 +123,12 @@ void TIM2_IRQHandler(void)
     }
 }
  
-
-/* =========================================================
- * CALIB HANDLER - gọi từ main loop khi nhận lệnh CALIB
- * ========================================================= */
-static ICM_Calibration_t s_cal;   
- 
 static void handle_calib_gyro(void)
 {
     UART5_WriteString("CALIB_GYRO: keep board STILL...\r\n");
     led_on(LED_BLUE_PIN);
  
-    ICM_CalibStatus_t gs = ICM42605_CalibrateGyro(&s_cal, 2000);
+    ICM_CalibStatus_t gs = ICM42605_CalibrateGyro(&s_cal, 200);
  
     if (gs != CALIB_OK) {
         UART5_WriteF("CALIB_GYRO FAILED code=%d\r\n", gs);
@@ -206,7 +176,7 @@ static void handle_calib_accel(void)
     UART5_WriteString("CALIB_ACCEL: place board FLAT and STILL...\r\n");
     led_on(LED_BLUE_PIN);
  
-    ICM_CalibStatus_t as = ICM42605_CalibrateAccel(&s_cal, 1000);
+    ICM_CalibStatus_t as = ICM42605_CalibrateAccel(&s_cal, 200);
  
     if (as != CALIB_OK) {
         UART5_WriteF("CALIB_ACCEL FAILED code=%d\r\n", as);
@@ -238,7 +208,6 @@ static void handle_calib_erase(void)
     FlashStatus_t fs = FlashStorage_Erase();
     if (fs == FLASH_OK) {
         UART5_WriteString("CALIB_ERASE OK\r\n");
-        /* Reset calib về mặc định */
         s_cal.gx_offset = s_cal.gy_offset = s_cal.gz_offset = 0.0f;
         s_cal.ax_offset = s_cal.ay_offset = s_cal.az_offset = 0.0f;
         s_cal.ax_gain   = s_cal.ay_gain   = s_cal.az_gain   = 1.0f;
@@ -248,43 +217,43 @@ static void handle_calib_erase(void)
         UART5_WriteF("CALIB_ERASE FAILED code=%d\r\n", fs);
     }
 }
- 
-/* =========================================================
- * MAIN
- * ========================================================= */
-int main(void)
-{
+
+static void handle_calib(void){
+    handle_calib_gyro();
+    handle_calib_accel();
+}
+
+int main(){
+
     *((volatile uint32_t *)0xE000ED88) |= (0xFU << 20);
-    
+
     clock_init();
     systick_init();
     led_init();
-
 
     ICM_Status imu_status = ICM42605_Init();
 
     if (imu_status == ICM_OK) {
         for (int i = 0; i < 3; i++) {
             led_on(LED_RED_PIN);
-            delay_ms(200);
+            delay_ms(500);
             led_off(LED_RED_PIN);
-            delay_ms(200);
+            delay_ms(500);
         }
     } else {
         while (1) {
             led_toggle(LED_BLUE_PIN);
-            delay_ms(200);
+            delay_ms(500);
         }
      }
 
-    /* ── init hc05 ──*/
     HC05_Init(42000000U, 115200U);
-    
+
+
     CalibData_t flash_data;
     FlashStatus_t fs = FlashStorage_Init(&flash_data);
     
     if (fs == FLASH_OK) {
-        /* Có calib data → load lên */
         s_cal.gx_offset  = flash_data.gx_offset;
         s_cal.gy_offset  = flash_data.gy_offset;
         s_cal.gz_offset  = flash_data.gz_offset;
@@ -295,11 +264,10 @@ int main(void)
         s_cal.ay_gain    = 1.0f;
         s_cal.az_gain    = 1.0f;
         s_cal.gyro_done  = true;
-        s_cal.accel_done = false;   /* accel calib chưa làm */
+        s_cal.accel_done = false;  
         UART5_WriteF("Calib loaded: GX:%.4f GY:%.4f GZ:%.4f\r\n",
                      s_cal.gx_offset, s_cal.gy_offset, s_cal.gz_offset);
     } else {
-        /* Chưa có calib → offset = 0 */
         s_cal.gx_offset = s_cal.gy_offset = s_cal.gz_offset = 0.0f;
         s_cal.ax_offset = s_cal.ay_offset = s_cal.az_offset = 0.0f;
         s_cal.ax_gain   = s_cal.ay_gain   = s_cal.az_gain   = 1.0f;
@@ -308,56 +276,56 @@ int main(void)
         UART5_WriteString("No calib data, using defaults\r\n");
     }
 
-    /* ── Khởi động TIM2: trigger đọc IMU 100Hz ─*/
+    
     Timer2_InitHz(84000000U, 100U);
     Timer2_Start();
 
-    /* ── Attitude pipeline ── */
-    Attitude_Init(IMU_DT);
-
-
-    /* ── Main loop ── */
     ICM42605_Data   data;
+    IMUFilter_t imu_filter;
+
+    bool data_valid = false;
     uint32_t last_blink = 0;
     uint32_t last_log  = 0;
+
+    IMU_FilterInit(&imu_filter, 1.0f / 100.0f);
+    Attitude_Init(1.0f / 100.0f);
 
     while (1) {
         uint32_t now = get_tick();
 
         if (ICM42605_IsDataReady()) {
             ICM42605_GetLatestData(&data);
-            // ICM42605_ApplyCalibration(&data, &s_cal);
-            // ICM42605_RemapAxes(&data,  MY_CASE_NED);
-            // Attitude_Update(&data, IMU_DT);
+            ICM42605_RemapAxes(&data);
+            ICM42605_ApplyCalibration(&data, &s_cal);
+            IMU_FilterApply(&imu_filter, &data);
+            Attitude_Update(&data, 1.0f / 100.0f);
+            data_valid = true;
         }
 
         HC05_Poll();
 
         HC05_CalibCmd cmd = HC05_GetCalibCmd();
-        if (cmd == HC05_CMD_CALIB_GYRO)  handle_calib_gyro();
+        if (cmd == HC05_CMD_CALIB) handle_calib();
+        if (cmd == HC05_CMD_CALIB_GYRO) handle_calib_gyro();
         if (cmd == HC05_CMD_CALIB_ACCEL) handle_calib_accel();
         if (cmd == HC05_CMD_CALIB_ERASE) handle_calib_erase();
 
         if (HC05_GetStreamState() == HC05_STREAM_RUN) {
-            if ((now - last_log) >= 1000U) {
+            if (data_valid && ((now - last_log) >= 100U)){
                 last_log = now;
-                // const Attitude_t *att = Attitude_Get();
-                HC05_SendIMU(&data);
-                // HC05_SendAttitude(att->roll, att->pitch, att->yaw);
-                led_on(LED_BLUE_PIN);
+                // HC05_SendIMU(&data);
+
+                const Attitude_t *att = Attitude_Get();
+                UART5_WriteF("R: %.2f P: %.2f Y: %.2f\r\n", att->roll, att->pitch, att->yaw );
             }
-        } else {
-            led_off(LED_BLUE_PIN);
         }
- 
+        else led_on(LED_BLUE_PIN);
 
         if ((now - last_blink) >= 500U) {
             last_blink = now;
             led_toggle(LED_RED_PIN);
         }
     }
-
+    
     return 0;
 }
-
-
