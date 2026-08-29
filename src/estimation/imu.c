@@ -1,8 +1,8 @@
 #include "imu.h"
 #include <math.h>
 #include <stddef.h>
-#include "uart5.h"
-static uint8_t imu_debug_counter = 0;
+// #include "uart5.h"
+// static uint8_t imu_debug_counter = 0;
 
 static float vec3NormSq(const Vec3_t *v)
 {
@@ -105,43 +105,7 @@ static void imuMahonyUpdate(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel,
     vRotation.y += imu->gyroDrift.y;
     vRotation.z += imu->gyroDrift.z;
 
-    float tx = vRotation.x * 0.5f * dT;
-    float ty = vRotation.y * 0.5f * dT;
-    float tz = vRotation.z * 0.5f * dT;
-
-    float thetaSq = tx*tx + ty*ty + tz*tz;
-
-    float dq0, dq1, dq2, dq3;
-
-    if (thetaSq * thetaSq < 24.0e-6f) {
-        float s = 1.0f - thetaSq / 6.0f;
-        dq0 = 1.0f - thetaSq / 2.0f;
-        dq1 = tx * s;
-        dq2 = ty * s;
-        dq3 = tz * s;
-    } else {
-        float theta = sqrtf(thetaSq);
-        float s     = sinf(theta) / theta;
-        dq0 = cosf(theta);
-        dq1 = tx * s;
-        dq2 = ty * s;
-        dq3 = tz * s;
-    }
-
-    float q0 = imu->q.q0, q1 = imu->q.q1;
-    float q2 = imu->q.q2, q3 = imu->q.q3;
-
-    imu->q.q0 = q0*dq0 - q1*dq1 - q2*dq2 - q3*dq3;
-    imu->q.q1 = q0*dq1 + q1*dq0 + q2*dq3 - q3*dq2;
-    imu->q.q2 = q0*dq2 - q1*dq3 + q2*dq0 + q3*dq1;
-    imu->q.q3 = q0*dq3 + q1*dq2 - q2*dq1 + q3*dq0;
-
-    float normSq = imu->q.q0*imu->q.q0 + imu->q.q1*imu->q.q1 + imu->q.q2*imu->q.q2 + imu->q.q3*imu->q.q3;
-    float scale  = (3.0f - normSq) * 0.5f;
-    imu->q.q0 *= scale;
-    imu->q.q1 *= scale;
-    imu->q.q2 *= scale;
-    imu->q.q3 *= scale;
+    integrateBodyRate(&imu->q, &vRotation, dT); 
 
     imuComputeRotationMatrix(imu);
 }
@@ -158,23 +122,23 @@ static void imuUpdateEulerAngles(IMU_t *imu)
     if (imu->attitude.yaw < 0.0f)
         imu->attitude.yaw += 360.0f;
     
-    imu_debug_counter++;
+    // imu_debug_counter++;
 
-    if (imu_debug_counter >= 10)
-    {
-        imu_debug_counter = 0;
+    // if (imu_debug_counter >= 10)
+    // {
+    //     imu_debug_counter = 0;
 
-        // UART5_WriteF(
-        //     "R20=%.4f R21=%.4f R22=%.4f | "
-        //     "R=%.2f P=%.2f Y=%.2f\r\n",
-        //     imu->rMat[2][0],
-        //     imu->rMat[2][1],
-        //     imu->rMat[2][2],
-        //     imu->attitude.roll,
-        //     imu->attitude.pitch,
-        //     imu->attitude.yaw
-        // );
-    }
+    //     UART5_WriteF(
+    //         "R20=%.4f R21=%.4f R22=%.4f | "
+    //         "R=%.2f P=%.2f Y=%.2f\r\n",
+    //         imu->rMat[2][0],
+    //         imu->rMat[2][1],
+    //         imu->rMat[2][2],
+    //         imu->attitude.roll,
+    //         imu->attitude.pitch,
+    //         imu->attitude.yaw
+    //     );
+    // }
 }
 
 void IMU_Init(IMU_t *imu, float kp, float ki, float dT)

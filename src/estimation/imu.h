@@ -1,13 +1,7 @@
 #ifndef IMU_H
 #define IMU_H
 
-typedef struct {
-    float q0, q1, q2, q3;   /* w, x, y, z */
-} Quaternion_t;
-
-typedef struct {
-    float x, y, z;
-} Vec3_t;
+#include "quaternion.h"
 
 typedef struct {
     float roll;   

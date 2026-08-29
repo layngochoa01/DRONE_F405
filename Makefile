@@ -23,7 +23,8 @@ C_SRCS = \
 	src/syscalls.c	\
 	src/estimation/imu.c \
 	src/estimation/filter.c \
-	src/estimation/attitude.c
+	src/estimation/attitude.c \
+	src/estimation/quaternion.c
 
 C_INCLUDES = \
     -Iinclude \
