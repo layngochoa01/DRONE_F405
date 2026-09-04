@@ -171,3 +171,12 @@ const Quaternion_t *IMU_GetQuaternion(const IMU_t *imu)
 {
     return &imu->q;
 }
+
+void GetRotationMatrix(const IMU_t *imu, float rMat[3][3])
+{
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            rMat[i][j] = imu->rMat[i][j];
+        }
+    }
+}

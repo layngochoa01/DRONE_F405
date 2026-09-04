@@ -28,11 +28,8 @@ typedef struct {
 #define M_PIf               3.14159265358979f
 
 void IMU_Init(IMU_t *imu, float kp, float ki, float dT);
-
 void IMU_Update(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel, float dT);
-
 const Attitude_t *IMU_GetAttitude(const IMU_t *imu);
-
 const Quaternion_t *IMU_GetQuaternion(const IMU_t *imu);
-
+void GetRotationMatrix(const IMU_t *imu, float rMat[3][3]);
 #endif
