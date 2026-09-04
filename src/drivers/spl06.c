@@ -42,7 +42,7 @@ static bool readRaw24(uint8_t regAddr, int32_t *out)
 static bool readCalibCoefficients(void)
 {
     uint8_t c[18];
-    if (!I2C1_ReadRegs(SPL06_ADDR, SPL06_REG_COEF, c, 18)) return false;
+    if (!I2C1_ReadRegs(SPL06_ADDR, REG_COEF, c, 18)) return false;
 
     s_calib.c0  = signExtend(((uint32_t)c[0] << 4) | (c[1] >> 4), 12);
     s_calib.c1  = signExtend((((uint32_t)c[1] & 0x0F) << 8) | c[2], 12);
@@ -59,15 +59,25 @@ static bool readCalibCoefficients(void)
 
 bool SPL06_Init(void)
 {
+    I2C1_Init();
+
     I2C1_WriteReg(SPL06_ADDR, REG_RESET, 0x09);
 
-    for (volatile uint32_t i = 0; i < 100000U; i++) {}   
+    for (volatile uint32_t i = 0; i < 100000U; i++) {}  
+
+    uint8_t status = 0;
+    uint32_t retries = 0;
+    do {
+        if (!I2C1_ReadReg(SPL06_ADDR, REG_MEAS_CFG, &status)) return false;
+        if (status & 0x80) break;  
+        for (volatile uint32_t i = 0; i < 10000U; i++) {}
+        retries++;
+    } while (retries < 50);  
 
     if (!readCalibCoefficients()) return false;
 
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x03)) return false;   
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false; 
-
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x03)) return false;
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false;
     if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
 
     return true;
@@ -81,11 +91,11 @@ bool SPL06_Update(SPL06_Data_t *out)
     if (!(status & MEAS_CFG_PRS_RDY) || !(status & MEAS_CFG_TMP_RDY)) {
         return false; 
     }
-
+    
     int32_t rawPressure, rawTemperature;
     if (!readRaw24(REG_PSR_B2, &rawPressure)) return false;
     if (!readRaw24(REG_TMP_B2, &rawTemperature)) return false;
-
+    // UART5_WriteF("RAW: P=%ld T=%ld\r\n", (long)rawPressure, (long)rawTemperature);
     float pRaw = (float)rawPressure / SPL06_SCALE_FACTOR;
     float tRaw = (float)rawTemperature / SPL06_SCALE_FACTOR;
 
