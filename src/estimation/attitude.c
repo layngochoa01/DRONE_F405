@@ -34,3 +34,8 @@ const Quaternion_t *Quaternion_Get(void)
 {
      return IMU_GetQuaternion(&s_imu);
 }
+
+void Attitude_GetRotationMatrix(float rMat[3][3])
+{
+    GetRotationMatrix(&s_imu, rMat);
+}

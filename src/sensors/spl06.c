@@ -1,5 +1,5 @@
 #include "spl06.h"
-#include "I2C.h"
+#include "../drivers/I2C.h"
 
 #define SPL06_ADDR  0X76
 

@@ -1,6 +1,3 @@
-# Makefile - BLUEBERRY F405 bare-metal
-# Ubuntu: sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi
-
 CC      = arm-none-eabi-gcc
 AS      = arm-none-eabi-gcc
 LD      = arm-none-eabi-gcc
@@ -16,15 +13,18 @@ C_SRCS = \
     src/main.c \
     src/sensors/icm42605.c \
 	src/sensors/hc05.c	\
+	src/sensors/spl06.c \
 	src/drivers/spi.c \
 	src/drivers/uart5.c	\
+	src/drivers/I2C.c	\
 	src/drivers/timer.c \
 	src/drivers/flash_storage.c \
 	src/syscalls.c	\
 	src/estimation/imu.c \
 	src/estimation/filter.c \
 	src/estimation/attitude.c \
-	src/estimation/quaternion.c
+	src/estimation/quaternion.c \
+	src/estimation/altitude.c
 
 C_INCLUDES = \
     -Iinclude \

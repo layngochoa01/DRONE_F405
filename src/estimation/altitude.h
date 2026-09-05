@@ -8,11 +8,11 @@ typedef struct {
     float verticalVelocity;  
 } AltitudeState_t;
 
-void  init(void);
-void  setBaseline(float currentPressurePa);
-float  pressureToMeters(float pressurePa);
-void update(float baroAltitude, float verticalAccel, float dT);
+void  Altitude_Init(void);
+void  Altitude_SetBaseline(float currentPressurePa);
+float  Altitude_PressureToMeters(float pressurePa);
+void Altitude_Update(float baroAltitude, float verticalAccel, float dT);
 
-const AltitudeState_t * get(void);
-float  computeVerticalAccel(const float rMat[3][3], float accelX, float accelY, float accelZ);
+const AltitudeState_t * Altitude_Get(void);
+float  Altitude_ComputeVerticalAccel(const float rMat[3][3], float accelX, float accelY, float accelZ);
 #endif

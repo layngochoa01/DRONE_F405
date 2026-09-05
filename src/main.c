@@ -9,7 +9,11 @@
  *   6. log roll, ptich, yaw 
  *   7. FLASH STORAGE 2slot
  *   8. calib gyro+accel
- *   9. check rc receiver
+ *   9. test spl06
+ *      log press and temp
+ *      
+ * check rc receiver
+ *    
  *
  * SPI1: PA5(SCK) | PA7(MOSI) | PB4(MISO) | PC14(CS)
  * UART5: 
@@ -24,9 +28,12 @@
 #include "attitude.h"
 #include "flash_storage.h"
 #include "filter.h"
+#include "spl06.h"
+#include "altitude.h"
 
 static volatile uint32_t ms_tick = 0;
 static ICM_Calibration_t s_cal;   
+static bool spl06_ready = false;
 
 void systick_handler(void)
 {
@@ -136,7 +143,6 @@ static void handle_calib_gyro(void)
         return;
     }
  
-    /* Lưu vào Flash */
     CalibData_t flash_data = {
         .gx_offset = s_cal.gx_offset,
         .gy_offset = s_cal.gy_offset,
@@ -249,6 +255,7 @@ int main(){
 
     HC05_Init(42000000U, 115200U);
 
+    spl06_ready = SPL06_Init();
 
     CalibData_t flash_data;
     FlashStatus_t fs = FlashStorage_Init(&flash_data);
@@ -276,20 +283,28 @@ int main(){
         UART5_WriteString("No calib data, using defaults\r\n");
     }
 
-    
     Timer2_InitHz(84000000U, 100U);
     Timer2_Start();
 
     ICM42605_Data   data;
+    SPL06_Data_t baro;
+
+    if (spl06_ready && SPL06_Update(&baro)) {
+        Altitude_SetBaseline(baro.pressPa);
+    }
+    
     IMUFilter_t imu_filter;
 
     bool data_valid = false;
     uint32_t last_blink = 0;
     uint32_t last_log  = 0;
 
+    static uint32_t last_baro = 0;
+
     IMU_FilterInit(&imu_filter, 1.0f / 100.0f);
     Attitude_Init(1.0f / 100.0f);
-
+    Altitude_Init();
+        
     while (1) {
         uint32_t now = get_tick();
 
@@ -322,6 +337,24 @@ int main(){
             }
         }
         else led_on(LED_BLUE_PIN);
+
+        if (spl06_ready && (now - last_baro) >= 125U) {
+            last_baro = now;
+
+            SPL06_Data_t baro;
+            if (SPL06_Update(&baro)) {
+                float rMat[3][3];
+                Attitude_GetRotationMatrix(rMat);
+
+                float verticalAccel = Altitude_ComputeVerticalAccel(rMat, data.accel_x, data.accel_y, data.accel_z);
+                float baroAlt = Altitude_PressureToMeters(baro.pressPa);
+
+                Altitude_Update(baroAlt, verticalAccel, 0.125f);   
+
+                const AltitudeState_t *alt = Altitude_Get();
+                UART5_WriteF("Alt: %.2f m  VVel: %.2f m/s\r\n", alt->altitude, alt->verticalVelocity);
+            }
+        }
 
         if ((now - last_blink) >= 500U) {
             last_blink = now;
