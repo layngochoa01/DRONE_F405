@@ -169,17 +169,14 @@ void ICM42605_GetLatestData(ICM42605_Data *out);
 #define CALIB_MIN_VALID_SAMPLES      100U
 
 typedef struct {
-    /* Offset (zero calibration) */
     float ax_offset, ay_offset, az_offset;
     float gx_offset, gy_offset, gz_offset;
 
-    /* Gain (scale calibration) - học từ INAV accGain */
-    float ax_gain, ay_gain, az_gain;   /* mặc định 1.0 */
+    float ax_gain, ay_gain, az_gain;  
 
-    /* Trạng thái */
     bool  gyro_done;
     bool  accel_done;
-    uint16_t valid_samples;   /* số sample hợp lệ thực tế */
+    uint16_t valid_samples;  
 } ICM_Calibration_t;
 
 typedef enum {

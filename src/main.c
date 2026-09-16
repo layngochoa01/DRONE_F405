@@ -31,6 +31,11 @@
 #include "spl06.h"
 #include "altitude.h"
 
+#define NOISE_ALT   0.001f
+#define NOISE_VEL   0.001f
+#define NOISE_BIAS  0.00001f
+#define NOISE_BARO  1.0f
+
 static volatile uint32_t ms_tick = 0;
 static ICM_Calibration_t s_cal;   
 static bool spl06_ready = false;
@@ -129,7 +134,28 @@ void TIM2_IRQHandler(void)
         ICM42605_TriggerRead();
     }
 }
- 
+
+static void save_calib_to_flash(void)
+{
+    CalibData_t flash_data = {
+        .gx_offset  = s_cal.gx_offset,
+        .gy_offset  = s_cal.gy_offset,
+        .gz_offset  = s_cal.gz_offset,
+        .ax_offset  = s_cal.ax_offset,
+        .ay_offset  = s_cal.ay_offset,
+        .az_offset  = s_cal.az_offset,
+        .gyro_done  = s_cal.gyro_done  ? 1U : 0U,
+        .accel_done = s_cal.accel_done ? 1U : 0U,
+    };
+
+    FlashStatus_t fs = FlashStorage_Save(&flash_data);
+    if (fs == FLASH_OK) {
+        UART5_WriteString("Calib saved to Flash OK\r\n");
+    } else {
+        UART5_WriteF("Calib Flash save FAILED code=%d\r\n", fs);
+    }
+}
+
 static void handle_calib_gyro(void)
 {
     UART5_WriteString("CALIB_GYRO: keep board STILL...\r\n");
@@ -143,37 +169,8 @@ static void handle_calib_gyro(void)
         return;
     }
  
-    CalibData_t flash_data = {
-        .gx_offset = s_cal.gx_offset,
-        .gy_offset = s_cal.gy_offset,
-        .gz_offset = s_cal.gz_offset,
-        .ax_offset = s_cal.ax_offset,
-        .ay_offset = s_cal.ay_offset,
-        .az_offset = s_cal.az_offset,
-    };
- 
-    FlashStatus_t fs = FlashStorage_Save(&flash_data);
-    if (fs == FLASH_OK) {
-        UART5_WriteString("CALIB_GYRO saved to Flash OK\r\n");
+    save_calib_to_flash();
 
-        /* Đọc lại Flash để verify */
-        CalibData_t verify;
-        FlashStatus_t fv = FlashStorage_Init(&verify);
-        if (fv == FLASH_OK) {
-            UART5_WriteF("=== VERIFY FLASH ===\r\n");
-            UART5_WriteF("SEQ : %lu\r\n",  verify.sequence);
-            UART5_WriteF("GX  : %.6f\r\n", verify.gx_offset);
-            UART5_WriteF("GY  : %.6f\r\n", verify.gy_offset);
-            UART5_WriteF("GZ  : %.6f\r\n", verify.gz_offset);
-            UART5_WriteF("CRC : 0x%08lX\r\n", verify.crc);
-            UART5_WriteF("====================\r\n");
-        } else {
-            UART5_WriteString("VERIFY FAILED!\r\n");
-        }
-    } else {
-        UART5_WriteF("CALIB_GYRO Flash save FAILED code=%d\r\n", fs);
-    }
- 
     led_off(LED_BLUE_PIN);
 }
  
@@ -190,21 +187,7 @@ static void handle_calib_accel(void)
         return;
     }
  
-    CalibData_t flash_data = {
-        .gx_offset = s_cal.gx_offset,
-        .gy_offset = s_cal.gy_offset,
-        .gz_offset = s_cal.gz_offset,
-        .ax_offset = s_cal.ax_offset,
-        .ay_offset = s_cal.ay_offset,
-        .az_offset = s_cal.az_offset,
-    };
- 
-    FlashStatus_t fs = FlashStorage_Save(&flash_data);
-    if (fs == FLASH_OK) {
-        UART5_WriteString("CALIB_ACCEL saved to Flash OK\r\n");
-    } else {
-        UART5_WriteF("CALIB_ACCEL Flash save FAILED code=%d\r\n", fs);
-    }
+    save_calib_to_flash();
  
     led_off(LED_BLUE_PIN);
 }
@@ -227,6 +210,35 @@ static void handle_calib_erase(void)
 static void handle_calib(void){
     handle_calib_gyro();
     handle_calib_accel();
+}
+
+static bool altitude_calibrate_baseline(void)
+{
+    const int samples = 100;
+    float sum = 0.0f;
+    int count = 0;
+
+    UART5_WriteString("ALT BASELINE: collecting...\r\n");
+
+    for (int i = 0; i < samples; i++) {
+        SPL06_Data_t baro;
+        if (SPL06_Update(&baro)) {
+            sum += baro.pressPa;
+            count++;
+        }
+        delay_ms(20);
+    }
+
+    if (count == 0) {
+        UART5_WriteString("ALT BASELINE: FAILED\r\n");
+        return false;
+    }
+
+    float baseline = sum / (float)count;
+    Altitude_SetBaseline(baseline);
+
+    UART5_WriteF("ALT BASELINE: %.2f Pa (%d samples)\r\n", baseline, count);
+    return true;
 }
 
 int main(){
@@ -254,12 +266,32 @@ int main(){
      }
 
     HC05_Init(42000000U, 115200U);
-
+    // delay_ms(15000);
     spl06_ready = SPL06_Init();
+    AltitudeBaro_Init(101325.0f);
+
+    if (spl06_ready) {
+        delay_ms(3000);
+        altitude_calibrate_baseline();
+    }
 
     CalibData_t flash_data;
     FlashStatus_t fs = FlashStorage_Init(&flash_data);
-    
+
+    // delay_ms(10000);
+    // UART5_WriteF(
+    //     "FLASH DATA: AX=%.6f AY=%.6f AZ=%.6f\r\n",
+    //     flash_data.ax_offset,
+    //     flash_data.ay_offset,
+    //     flash_data.az_offset
+    // );
+    //    UART5_WriteF(
+    //     "FLASH DATA: GX=%.6f GY=%.6f GZ=%.6f\r\n",
+    //     flash_data.gx_offset,
+    //     flash_data.gy_offset,
+    //     flash_data.gz_offset
+    // );
+
     if (fs == FLASH_OK) {
         s_cal.gx_offset  = flash_data.gx_offset;
         s_cal.gy_offset  = flash_data.gy_offset;
@@ -270,10 +302,10 @@ int main(){
         s_cal.ax_gain    = 1.0f;
         s_cal.ay_gain    = 1.0f;
         s_cal.az_gain    = 1.0f;
-        s_cal.gyro_done  = true;
-        s_cal.accel_done = false;  
-        UART5_WriteF("Calib loaded: GX:%.4f GY:%.4f GZ:%.4f\r\n",
-                     s_cal.gx_offset, s_cal.gy_offset, s_cal.gz_offset);
+        s_cal.gyro_done  = (flash_data.gyro_done  != 0U);
+        s_cal.accel_done = (flash_data.accel_done != 0U);  
+        // UART5_WriteF("Calib loaded: GX:%.4f GY:%.4f GZ:%.4f\r\n", s_cal.gx_offset, s_cal.gy_offset, s_cal.gz_offset);
+        // UART5_WriteF( "ACCEL OFFSET: X=%.4f Y=%.4f Z=%.4f\r\n", s_cal.ax_offset, s_cal.ay_offset, s_cal.az_offset);
     } else {
         s_cal.gx_offset = s_cal.gy_offset = s_cal.gz_offset = 0.0f;
         s_cal.ax_offset = s_cal.ay_offset = s_cal.az_offset = 0.0f;
@@ -283,27 +315,27 @@ int main(){
         UART5_WriteString("No calib data, using defaults\r\n");
     }
 
+    AltitudeKF_Init(NOISE_ALT, NOISE_VEL, NOISE_BIAS, NOISE_BARO);
+    // delay_ms(10000);
+    
+
+    
     Timer2_InitHz(84000000U, 100U);
     Timer2_Start();
 
     ICM42605_Data   data;
-    SPL06_Data_t baro;
-
-    if (spl06_ready && SPL06_Update(&baro)) {
-        Altitude_SetBaseline(baro.pressPa);
-    }
-    
     IMUFilter_t imu_filter;
-
+/////////////////////////////MAIN LOOP////////////////////////////////////
     bool data_valid = false;
     uint32_t last_blink = 0;
     uint32_t last_log  = 0;
 
     static uint32_t last_baro = 0;
+    static uint32_t last_kf_log = 0;
 
     IMU_FilterInit(&imu_filter, 1.0f / 100.0f);
     Attitude_Init(1.0f / 100.0f);
-    Altitude_Init();
+ 
         
     while (1) {
         uint32_t now = get_tick();
@@ -314,6 +346,14 @@ int main(){
             ICM42605_ApplyCalibration(&data, &s_cal);
             IMU_FilterApply(&imu_filter, &data);
             Attitude_Update(&data, 1.0f / 100.0f);
+            if(data_valid){
+                float rMat[3][3];
+                Attitude_GetRotationMatrix(rMat);
+
+                float accelZ_world = Altitude_ComputeVerticalAccel(rMat, data.accel_x, data.accel_y, data.accel_z);
+                // UART5_WriteF("AZ:[ %8.2f], \r\t",accelZ_world );
+                AltitudeKF_Predict(accelZ_world, 1.0f / 100.0f);
+            }
             data_valid = true;
         }
 
@@ -328,12 +368,8 @@ int main(){
         if (HC05_GetStreamState() == HC05_STREAM_RUN) {
             if (data_valid && ((now - last_log) >= 100U)){
                 last_log = now;
-                // HC05_SendIMU(&data);
-
-                // const Attitude_t *att = Attitude_Get();
-                // UART5_WriteF("R: %.2f P: %.2f Y: %.2f\r\n", att->roll, att->pitch, att->yaw );
                 const Quaternion_t *q = Quaternion_Get();
-                HC05_LogQuaternion(q);
+                // HC05_LogQuaternion(q);
             }
         }
         else led_on(LED_BLUE_PIN);
@@ -343,22 +379,16 @@ int main(){
 
             SPL06_Data_t baro;
             if (SPL06_Update(&baro)) {
-                float rMat[3][3];
-                Attitude_GetRotationMatrix(rMat);
-
-                float verticalAccel = Altitude_ComputeVerticalAccel(rMat, data.accel_x, data.accel_y, data.accel_z);
                 float baroAlt = Altitude_PressureToMeters(baro.pressPa);
-
-                Altitude_Update(baroAlt, verticalAccel, 0.125f);   
-
-                const AltitudeState_t *alt = Altitude_Get();
-                UART5_WriteF("Alt: %.2f m  VVel: %.2f m/s\r\n", alt->altitude, alt->verticalVelocity);
+                // UART5_WriteF( "P: %.2f Pa  BAlt: %.3f m\r\n",  baro.pressPa, baroAlt);
+                AltitudeKF_UpdateBaro(baroAlt);
             }
         }
 
-        if ((now - last_blink) >= 500U) {
-            last_blink = now;
-            led_toggle(LED_RED_PIN);
+        if((now - last_kf_log) >= 200U){
+            last_kf_log = now;
+            const AltitudeKF_State_t *kf = AltitudeKF_Get();
+            // HC05_LogAltitudeFKState(kf);
         }
     }
     

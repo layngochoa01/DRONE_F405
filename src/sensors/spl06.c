@@ -1,6 +1,6 @@
 #include "spl06.h"
 #include "../drivers/I2C.h"
-
+#include"../drivers/uart5.h"
 #define SPL06_ADDR  0X76
 
 #define REG_PSR_B2  0x00
@@ -10,11 +10,13 @@
 #define REG_MEAS_CFG    0x08
 #define REG_ID  0x0D
 #define REG_COEF  0x10
+#define REG_COEF_SRCE  0x28
 #define REG_RESET  0x0C
 
 #define MEAS_CFG_MEAS_CTRL 0x07
 #define MEAS_CFG_PRS_RDY (1U << 4)
 #define MEAS_CFG_TMP_RDY (1U << 5)
+#define COEF_SRCE_TMP_MASK (1U << 7)
 
 #define SPL06_SCALE_FACTOR  7864320.0f 
 
@@ -60,9 +62,7 @@ static bool readCalibCoefficients(void)
 bool SPL06_Init(void)
 {
     I2C1_Init();
-
     I2C1_WriteReg(SPL06_ADDR, REG_RESET, 0x09);
-
     for (volatile uint32_t i = 0; i < 100000U; i++) {}  
 
     uint8_t status = 0;
@@ -76,10 +76,16 @@ bool SPL06_Init(void)
 
     if (!readCalibCoefficients()) return false;
 
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x03)) return false;
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false;
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
+    uint8_t coefSrce = 0;
+    if (!I2C1_ReadReg(SPL06_ADDR, REG_COEF_SRCE, &coefSrce)) return false;
+    uint8_t tmpExtBit = (coefSrce & COEF_SRCE_TMP_MASK) ? 0x80 : 0x00;
 
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x03)) return false;
+    // if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false;
+    // if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
+
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, tmpExtBit | 0x03)) return false;
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
     return true;
 }
 

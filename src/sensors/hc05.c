@@ -1,6 +1,5 @@
 #include "hc05.h"
 #include "uart5.h"
-
 #include <string.h>
 #include <stdio.h>
 
@@ -16,7 +15,7 @@ static HC05_CalibCmd    calib_cmd    = HC05_CMD_NONE;
 static char cmd_buf[CMD_BUF_SIZE];
 
 static uint16_t cmd_len = 0;
-
+static HC05_FlightCmd flight_cmd = HC05_FLIGHT_CMD_NONE;
 /* =========================================================
  * PUBLIC API
  * ========================================================= */
@@ -43,21 +42,25 @@ void HC05_SendIMU(const ICM42605_Data *data)
     UART5_WriteF(" G:[%8.2f, %8.2f, %8.2f] \r\n",data->gyro_x,  data->gyro_y,  data->gyro_z);
     // UART5_WriteF(" T:[%6.2f]\r\n",data->temp);
 }
-
 void HC05_SendRawIMU(const ICM42605_RawData *raw){
 
     UART5_WriteF(" A:[%6d, %6d, %6d] \r\n", raw->accel_x, raw->accel_y, raw->accel_z);
     // UART5_WriteF(" G:[%6d, %6d, %6d] \r\n",raw->gyro_x,  raw->gyro_y,  raw->gyro_z);
 
 }
-
 void HC05_SendAttitude(float roll, float pitch, float yaw)
 {
     UART5_WriteF("R:%6.2f P:%6.2f Y:%6.2f\r\n", roll, pitch, yaw);
 }
-
 void HC05_LogQuaternion(const Quaternion_t *q){
     UART5_WriteF("Q: w=%.4f x=%.4f y=%.4f z=%.4f\r\n", q->q0, q->q1, q->q2, q->q3);
+}
+void HC05_LogAltitudeFKState(const AltitudeKF_State_t *kf){
+    // UART5_WriteF("KF Alt: %.3f m  Vel: %.3f m/s  Bias: %.4f m/s2\r\n", kf->altitude, kf->velocity, kf->accelBias);
+    // UART5_WriteF("KF Alt: %.3f Vel: %.3f \r\n", kf->altitude, kf->velocity);
+    UART5_WriteF("KF Alt: %.3f \r\n", kf->altitude);
+    UART5_WriteF("Vel: %.3f \r\n", kf->velocity);
+    // UART5_WriteF("Bias: %.4f \r\n", kf->accelBias);
 }
 
 HC05_StreamState HC05_Poll(void)
@@ -75,6 +78,11 @@ HC05_StreamState HC05_Poll(void)
             else if (strcmp(cmd_buf, "CALIBACCEL") == 0) { calib_cmd = HC05_CMD_CALIB_ACCEL; UART5_WriteString("OK_CALIB_ACCEL\r\n"); }
             else if (strcmp(cmd_buf, "CALIBERASE") == 0) { calib_cmd = HC05_CMD_CALIB_ERASE; UART5_WriteString("OK_CALIB_ERASE\r\n"); }
             else if (strcmp(cmd_buf, "CALIB") == 0) { calib_cmd = HC05_CMD_CALIB; UART5_WriteString("OK CALIB \r\n");} 
+            else if (strcmp(cmd_buf, "ARM")    == 0) { flight_cmd = HC05_FLIGHT_CMD_ARM;    UART5_WriteString("OK_ARM\r\n"); }
+            else if (strcmp(cmd_buf, "DISARM") == 0) { flight_cmd = HC05_FLIGHT_CMD_DISARM; UART5_WriteString("OK_DISARM\r\n"); }
+            else if (strcmp(cmd_buf, "HOLD")   == 0) { flight_cmd = HC05_FLIGHT_CMD_HOLD;   UART5_WriteString("OK_HOLD\r\n"); }
+            else if (strcmp(cmd_buf, "CLIMB")  == 0) { flight_cmd = HC05_FLIGHT_CMD_CLIMB;  UART5_WriteString("OK_CLIMB\r\n"); }
+            else if (strcmp(cmd_buf, "LAND")   == 0) { flight_cmd = HC05_FLIGHT_CMD_LAND;   UART5_WriteString("OK_LAND\r\n"); }
             else if (cmd_len > 0U)                  { UART5_WriteString("ERR_CMD\r\n"); }
 
             cmd_len = 0;  
@@ -100,5 +108,12 @@ HC05_CalibCmd HC05_GetCalibCmd(void)
 {
     HC05_CalibCmd cmd = calib_cmd;
     calib_cmd = HC05_CMD_NONE;   
+    return cmd;
+}
+
+HC05_FlightCmd HC05_GetFlightCmd(void)
+{
+    HC05_FlightCmd cmd = flight_cmd;
+    flight_cmd = HC05_FLIGHT_CMD_NONE;
     return cmd;
 }
