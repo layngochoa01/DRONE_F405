@@ -28,19 +28,19 @@ static volatile uint32_t s_lastByteTick = 0;
 
 static bool s_frameBad = false;
 
-volatile uint8_t  g_sbusLastRaw = 0;
-volatile uint32_t g_sbusRawCount = 0;
+// volatile uint8_t  g_sbusLastRaw = 0;
+// volatile uint32_t g_sbusRawCount = 0;
 
-volatile uint32_t g_sbusBytes     = 0;
-volatile uint32_t g_sbusFrames    = 0;
-volatile uint32_t g_sbusGood      = 0;
-volatile uint32_t g_sbusBadFooter = 0;
-volatile uint32_t g_sbusBadUart   = 0;
+// volatile uint32_t g_sbusBytes     = 0;
+// volatile uint32_t g_sbusFrames    = 0;
+// volatile uint32_t g_sbusGood      = 0;
+// volatile uint32_t g_sbusBadFooter = 0;
+// volatile uint32_t g_sbusBadUart   = 0;
 
-volatile uint32_t g_sbusErrFE     = 0;
-volatile uint32_t g_sbusErrNE     = 0;
-volatile uint32_t g_sbusErrPE     = 0;
-volatile uint32_t g_sbusErrORE    = 0;;
+// volatile uint32_t g_sbusErrFE     = 0;
+// volatile uint32_t g_sbusErrNE     = 0;
+// volatile uint32_t g_sbusErrPE     = 0;
+// volatile uint32_t g_sbusErrORE    = 0;
 
 static uint32_t computeBRR(uint32_t pclk, uint32_t baud)
 {
@@ -115,8 +115,8 @@ void SBUS_ISR_Handler(void)
 
     uint8_t c = (uint8_t)USART2->DR;
 
-    g_sbusRawCount++;
-    g_sbusLastRaw = c;
+    // g_sbusRawCount++;
+    // g_sbusLastRaw = c;
 
     if (s_frameIndex == 0)
     {
@@ -130,10 +130,9 @@ void SBUS_ISR_Handler(void)
     {
         s_frameIndex = 0;
 
-        if (s_frameBuf[24] != 0x00)
+        if (s_frameBuf[24] != SBUS_FOOTER_BYTE)
             return;
 
-        /* Decode channel */
         uint8_t *d = (uint8_t *)&s_frameBuf[1];
 
         s_channelsRaw[0]  = (d[0] | d[1] << 8) & 0x07FF;
@@ -164,8 +163,8 @@ void SBUS_ISR_Handler(void)
         s_hasValidFrame = true;
         s_frameReady = true;
 
-        g_sbusFrames++;
-        g_sbusGood++;
+        // g_sbusFrames++;
+        // g_sbusGood++;
     }
 }
 

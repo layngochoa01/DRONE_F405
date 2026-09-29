@@ -1,24 +1,3 @@
-/*
- * main.c - BLUEBERRY F405 bare-metal
- * Chức năng:
- *   1. Cấu hình clock 168MHz (PLL từ HSI 16MHz)
- *   2. SysTick delay 1ms
- *   3. Blink LED PA13 (xanh dương) + PA14 (đỏ)
- *   4. Đọc ICM42605 qua SPI1
- *   5. Log ra terminal data imu da dps dma+timer2 có LPF + AAF + bỏ AFSR
- *   6. log roll, ptich, yaw 
- *   7. FLASH STORAGE 2slot
- *   8. calib gyro+accel
- *   9. test spl06
- *      log press and temp
- *      
- * check rc receiver
- *    
- *
- * SPI1: PA5(SCK) | PA7(MOSI) | PB4(MISO) | PC14(CS)
- * UART5: 
- */
-
 #include <stdint.h>
 #include "uart5.h"
 #include "register.h"
@@ -34,6 +13,7 @@
 #include "rate_control.h"
 #include "ibus.h"
 #include "sbus.h"
+
 #define NOISE_ALT   0.001f
 #define NOISE_VEL   0.001f
 #define NOISE_BIAS  0.00001f
@@ -138,10 +118,8 @@ void TIM2_IRQHandler(void)
     }
 }
 
-volatile uint32_t usart2_rx_count = 0;
 void USART2_IRQHandler(void)
-{
-    // IBUS_ISR_Handler();   
+{  
     SBUS_ISR_Handler();
 }
 
@@ -347,7 +325,6 @@ int main(){
     Attitude_Init(1.0f / 100.0f);
     RateControl_Init();
         
-    static uint32_t last_raw_log = 0;
     while (1) {
         uint32_t now = get_tick();
 
@@ -393,16 +370,16 @@ int main(){
         if (cmd == HC05_CMD_CALIB_ERASE) handle_calib_erase();
 
         if (SBUS_IsFrameReady()) {
-            UART5_WriteF("CH1-4: %u %u %u %u  FS=%d\r\n",
-                 SBUS_GetChannel(0), SBUS_GetChannel(1),
-                 SBUS_GetChannel(2), SBUS_GetChannel(3),
-                 SBUS_IsFailsafe());
+            uint16_t throttle = SBUS_GetChannel(2);
+            uint16_t roll     = SBUS_GetChannel(0);
+            uint16_t pitch    = SBUS_GetChannel(1);
+            uint16_t yaw      = SBUS_GetChannel(3);
         }
-        if ((now - last_raw_log) >= 500U) {
-            last_raw_log = now;
-            UART5_WriteF( "raw=%02X count=%lu\r\n", g_sbusLastRaw, g_sbusRawCount );
-            // UART5_WriteF("hdr=%lu ORE=%lu FE=%lu NE=%lu\r\n", g_hdrCount, g_errORE, g_errFE, g_errNE);
-        }
+        // if ((now - last_raw_log) >= 500U) {
+        //     last_raw_log = now;
+        //     UART5_WriteF( "raw=%02X count=%lu\r\n", g_sbusLastRaw, g_sbusRawCount );
+        //     UART5_WriteF("hdr=%lu ORE=%lu FE=%lu NE=%lu\r\n", g_hdrCount, g_errORE, g_errFE, g_errNE);
+        // }
         if (HC05_GetStreamState() == HC05_STREAM_RUN) {
             if (data_valid && ((now - last_log) >= 100U)){
                 last_log = now;
