@@ -1,7 +1,7 @@
 #include "quaternion.h"
 #include<math.h>
 
-void multiply(Quaternion_t *out, const Quaternion_t *a, const Quaternion_t *b){
+void Quaternion_Multiply(Quaternion_t *out, const Quaternion_t *a, const Quaternion_t *b){
     Quaternion_t r;
     r.q0 = a->q0*b->q0 - a->q1*b->q1 - a->q2*b->q2 - a->q3*b->q3;
     r.q1 = a->q0*b->q1 + a->q1*b->q0 + a->q2*b->q3 - a->q3*b->q2;
@@ -11,14 +11,14 @@ void multiply(Quaternion_t *out, const Quaternion_t *a, const Quaternion_t *b){
 
 }
 
-void conjugate(Quaternion_t *out, const Quaternion_t *q){
+void  Quaternion_Conjugate(Quaternion_t *out, const Quaternion_t *q){
     out->q0 =  q->q0;
     out->q1 = -q->q1;
     out->q2 = -q->q2;
     out->q3 = -q->q3;
 }
 
-void normalize(Quaternion_t *q){
+void Quaternion_Normalize(Quaternion_t *q){
     float normSq = q->q0*q->q0 + q->q1*q->q1 + q->q2*q->q2 + q->q3*q->q3;
     float scale  = (3.0f - normSq) * 0.5f;   // xấp xỉ 1/sqrt(normSq)
     q->q0 *= scale;
@@ -27,7 +27,7 @@ void normalize(Quaternion_t *q){
     q->q3 *= scale;
 }
 
-void fromEuler(Quaternion_t *q, float rollRad, float pitchRad, float yawRad){
+void Quaternion_FromEuler(Quaternion_t *q, float rollRad, float pitchRad, float yawRad){
     float cr = cosf(rollRad * 0.5f),  sr = sinf(rollRad * 0.5f);
     float cp = cosf(pitchRad * 0.5f), sp = sinf(pitchRad * 0.5f);
     float cy = cosf(yawRad * 0.5f),   sy = sinf(yawRad * 0.5f);
@@ -38,7 +38,7 @@ void fromEuler(Quaternion_t *q, float rollRad, float pitchRad, float yawRad){
     q->q3 = cr*cp*sy - sr*sp*cy;
 }
 
-void integrateBodyRate(Quaternion_t *q, const Vec3_t *rate, float dT){
+void Quaternion_IntegrateBodyRate(Quaternion_t *q, const Vec3_t *rate, float dT){
     float tx = rate->x * 0.5f * dT;
     float ty = rate->y * 0.5f * dT;
     float tz = rate->z * 0.5f * dT;
@@ -61,7 +61,7 @@ void integrateBodyRate(Quaternion_t *q, const Vec3_t *rate, float dT){
         dq.q3 = tz * s;
     }
 
-    multiply(q, q, &dq);
-    normalize(q);
+    Quaternion_Multiply(q, q, &dq);
+    Quaternion_Normalize(q);
 }
 

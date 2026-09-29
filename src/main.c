@@ -30,11 +30,14 @@
 #include "filter.h"
 #include "spl06.h"
 #include "altitude.h"
-
+#include "attitude_control.h"
+#include "rate_control.h"
+#include "ibus.h"
+#include "sbus.h"
 #define NOISE_ALT   0.001f
 #define NOISE_VEL   0.001f
 #define NOISE_BIAS  0.00001f
-#define NOISE_BARO  1.0f
+#define NOISE_BARO  0.0025f
 
 static volatile uint32_t ms_tick = 0;
 static ICM_Calibration_t s_cal;   
@@ -135,6 +138,13 @@ void TIM2_IRQHandler(void)
     }
 }
 
+volatile uint32_t usart2_rx_count = 0;
+void USART2_IRQHandler(void)
+{
+    // IBUS_ISR_Handler();   
+    SBUS_ISR_Handler();
+}
+
 static void save_calib_to_flash(void)
 {
     CalibData_t flash_data = {
@@ -214,13 +224,15 @@ static void handle_calib(void){
 
 static bool altitude_calibrate_baseline(void)
 {
-    const int samples = 100;
+    const int samples = 50;
+    const int timeout_ms = 10000;
     float sum = 0.0f;
     int count = 0;
+    uint32_t start = get_tick();
 
     UART5_WriteString("ALT BASELINE: collecting...\r\n");
 
-    for (int i = 0; i < samples; i++) {
+    while (count < samples && (get_tick() - start) < timeout_ms) {
         SPL06_Data_t baro;
         if (SPL06_Update(&baro)) {
             sum += baro.pressPa;
@@ -266,13 +278,15 @@ int main(){
      }
 
     HC05_Init(42000000U, 115200U);
-    // delay_ms(15000);
+    SBUS_Init(42000000U);
+    delay_ms(15000);
     spl06_ready = SPL06_Init();
     AltitudeBaro_Init(101325.0f);
 
     if (spl06_ready) {
-        delay_ms(3000);
+        delay_ms(8000);
         altitude_calibrate_baseline();
+        // UART5_WriteF("BASELINE SET: %.3f Pa\r\n", GetBaseLinePress());
     }
 
     CalibData_t flash_data;
@@ -318,8 +332,6 @@ int main(){
     AltitudeKF_Init(NOISE_ALT, NOISE_VEL, NOISE_BIAS, NOISE_BARO);
     // delay_ms(10000);
     
-
-    
     Timer2_InitHz(84000000U, 100U);
     Timer2_Start();
 
@@ -329,14 +341,13 @@ int main(){
     bool data_valid = false;
     uint32_t last_blink = 0;
     uint32_t last_log  = 0;
-
-    static uint32_t last_baro = 0;
-    static uint32_t last_kf_log = 0;
+    static uint32_t last_ctrl_log = 0;
 
     IMU_FilterInit(&imu_filter, 1.0f / 100.0f);
     Attitude_Init(1.0f / 100.0f);
- 
+    RateControl_Init();
         
+    static uint32_t last_raw_log = 0;
     while (1) {
         uint32_t now = get_tick();
 
@@ -351,8 +362,24 @@ int main(){
                 Attitude_GetRotationMatrix(rMat);
 
                 float accelZ_world = Altitude_ComputeVerticalAccel(rMat, data.accel_x, data.accel_y, data.accel_z);
-                // UART5_WriteF("AZ:[ %8.2f], \r\t",accelZ_world );
                 AltitudeKF_Predict(accelZ_world, 1.0f / 100.0f);
+                
+                Quaternion_t qSetpoint;
+                Quaternion_FromEuler(&qSetpoint, 0.0f, 0.0f, 0.0f);   
+                
+                Vec3_t rateSetpoint;
+                AttitudeControl_Update(&rateSetpoint, &qSetpoint, Quaternion_Get(), 5.0f, 5.0f, 3.0f);
+
+                Vec3_t gyroDegS = { data.gyro_x, data.gyro_y, data.gyro_z };
+                Vec3_t rateOutput;
+                RateControl_Update(&rateOutput, &rateSetpoint, &gyroDegS, 1.0f / 100.0f);
+
+                // if ((now - last_ctrl_log) >= 200U) {
+                //     last_ctrl_log = now;
+                //     UART5_WriteF("RSp: x=%.3f y=%.3f z=%.3f\r\n", rateSetpoint.x, rateSetpoint.y, rateSetpoint.z);
+                //     UART5_WriteF("Gy: x=%.1f y=%.1f z=%.1f \r\n", gyroDegS.x, gyroDegS.y, gyroDegS.z);
+                //     UART5_WriteF("Out: x=%.2f y=%.2f z=%.2f\r\n", rateOutput.x, rateOutput.y, rateOutput.z);
+                // }
             }
             data_valid = true;
         }
@@ -365,31 +392,23 @@ int main(){
         if (cmd == HC05_CMD_CALIB_ACCEL) handle_calib_accel();
         if (cmd == HC05_CMD_CALIB_ERASE) handle_calib_erase();
 
+        if (SBUS_IsFrameReady()) {
+            UART5_WriteF("CH1-4: %u %u %u %u  FS=%d\r\n",
+                 SBUS_GetChannel(0), SBUS_GetChannel(1),
+                 SBUS_GetChannel(2), SBUS_GetChannel(3),
+                 SBUS_IsFailsafe());
+        }
+        if ((now - last_raw_log) >= 500U) {
+            last_raw_log = now;
+            UART5_WriteF( "raw=%02X count=%lu\r\n", g_sbusLastRaw, g_sbusRawCount );
+            // UART5_WriteF("hdr=%lu ORE=%lu FE=%lu NE=%lu\r\n", g_hdrCount, g_errORE, g_errFE, g_errNE);
+        }
         if (HC05_GetStreamState() == HC05_STREAM_RUN) {
             if (data_valid && ((now - last_log) >= 100U)){
                 last_log = now;
-                const Quaternion_t *q = Quaternion_Get();
-                // HC05_LogQuaternion(q);
             }
         }
         else led_on(LED_BLUE_PIN);
-
-        if (spl06_ready && (now - last_baro) >= 125U) {
-            last_baro = now;
-
-            SPL06_Data_t baro;
-            if (SPL06_Update(&baro)) {
-                float baroAlt = Altitude_PressureToMeters(baro.pressPa);
-                // UART5_WriteF( "P: %.2f Pa  BAlt: %.3f m\r\n",  baro.pressPa, baroAlt);
-                AltitudeKF_UpdateBaro(baroAlt);
-            }
-        }
-
-        if((now - last_kf_log) >= 200U){
-            last_kf_log = now;
-            const AltitudeKF_State_t *kf = AltitudeKF_Get();
-            // HC05_LogAltitudeFKState(kf);
-        }
     }
     
     return 0;

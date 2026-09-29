@@ -80,11 +80,11 @@ bool SPL06_Init(void)
     if (!I2C1_ReadReg(SPL06_ADDR, REG_COEF_SRCE, &coefSrce)) return false;
     uint8_t tmpExtBit = (coefSrce & COEF_SRCE_TMP_MASK) ? 0x80 : 0x00;
 
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x03)) return false;
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x23)) return false;
     // if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false;
     // if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
 
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, tmpExtBit | 0x03)) return false;
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, tmpExtBit | 0x23)) return false;
     if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
     return true;
 }

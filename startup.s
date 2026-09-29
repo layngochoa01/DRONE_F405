@@ -11,7 +11,7 @@
     .extern  DMA2_Stream0_IRQHandler
     .extern  DMA2_Stream3_IRQHandler 
     .extern TIM2_IRQHandler
-
+    .extern USART2_IRQHandler
 /* =========================================================
  * VECTOR TABLE - RM0090 Table 61 (STM32F405 interrupt vectors)
  * ========================================================= */
@@ -64,7 +64,7 @@ _vector_table:
     .word   0                   /* IRQ25: TIM1_UP_TIM10      */
     .word   0                   /* IRQ26: TIM1_TRG_TIM11     */
     .word   0                   /* IRQ27: TIM1_CC            */
-    .word   TIM2_IRQHandler                   /* IRQ28: TIM2               */
+    .word   TIM2_IRQHandler     /* IRQ28: TIM2               */
     .word   0                   /* IRQ29: TIM3               */
     .word   0                   /* IRQ30: TIM4               */
     .word   0                   /* IRQ31: I2C1_EV            */
@@ -74,7 +74,7 @@ _vector_table:
     .word   0                   /* IRQ35: SPI1               */
     .word   0                   /* IRQ36: SPI2               */
     .word   0                   /* IRQ37: USART1             */
-    .word   0                   /* IRQ38: USART2             */
+    .word   USART2_IRQHandler   /* IRQ38: USART2             */
     .word   0                   /* IRQ39: USART3             */
     .word   0                   /* IRQ40: EXTI15_10          */
     .word   0                   /* IRQ41: RTC_Alarm          */
@@ -119,9 +119,6 @@ _vector_table:
     .word   0                   /* IRQ80: HASH_RNG           */
     .word   0                   /* IRQ81: FPU                */
 
-/* =========================================================
- * RESET HANDLER
- * ========================================================= */
     .section .text
     .align 2
     .thumb_func
@@ -129,14 +126,12 @@ _vector_table:
     .type   reset_handler, %function
 
 reset_handler:
-    /* --- Enable FPU --- */
     ldr     r0, =0xE000ED88
     ldr     r1, [r0]
     orr     r1, r1, #(0xF << 20)   /* CP10[21:20]=11, CP11[23:22]=11 */
     str     r1, [r0]
     dsb                             /* Data Sync Barrier */
     isb                             /* Instruction Sync Barrier */
-    /* Bước 1: Copy .data từ Flash → RAM */
     ldr     r0, =_data_lma
     ldr     r1, =_data_start
     ldr     r2, =_data_end
@@ -150,7 +145,6 @@ copy_data_loop:
 
 copy_data_done:
 
-    /* Bước 2: Zero-fill .bss */
     ldr     r0, =_bss_start
     ldr     r1, =_bss_end
     mov     r2, #0
@@ -162,11 +156,8 @@ zero_bss_loop:
     b       zero_bss_loop
 
 zero_bss_done:
-
-    /* Bước 3: Gọi main() */
     bl      main
 
-    /* Bước 4: main() thoát → loop vô tận */
 hang:
     b       hang
 

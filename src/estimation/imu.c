@@ -105,7 +105,7 @@ static void imuMahonyUpdate(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel,
     vRotation.y += imu->gyroDrift.y;
     vRotation.z += imu->gyroDrift.z;
 
-    integrateBodyRate(&imu->q, &vRotation, dT); 
+    Quaternion_IntegrateBodyRate(&imu->q, &vRotation, dT); 
 
     imuComputeRotationMatrix(imu);
 }

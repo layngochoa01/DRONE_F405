@@ -19,18 +19,27 @@ C_SRCS = \
 	src/drivers/I2C.c	\
 	src/drivers/timer.c \
 	src/drivers/flash_storage.c \
+	src/drivers/ibus.c \
+	src/drivers/sbus.c \
 	src/syscalls.c	\
 	src/estimation/imu.c \
 	src/estimation/filter.c \
 	src/estimation/attitude.c \
 	src/estimation/quaternion.c \
-	src/estimation/altitude.c
+	src/estimation/altitude.c \
+	src/control/attitude_control.c	\
+	src/control/flight_state.c	\
+	src/control/pid.c	\
+	src/control/rate_control.c	\
+	src/control/motor_mixer.c	\
+
 
 C_INCLUDES = \
     -Iinclude \
     -Isrc/drivers \
 	-Isrc/sensors \
-	-Isrc/estimation
+	-Isrc/estimation \
+	-Isrc/control
 
 AS_SRCS = startup.s
 

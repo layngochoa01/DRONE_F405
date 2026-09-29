@@ -1,7 +1,7 @@
 #ifndef ATTITUDE_CONTROL_H
 #define ATTITUDE_CONTROL_H
 
-#include "../estimation/imu.h"   /* Quaternion_t, Vec3_t */
+#include "../estimation/imu.h"   
 
 void AttitudeControl_ComputeError(Vec3_t *errorVec, const Quaternion_t *qSetpoint, const Quaternion_t *qCurrent);
 

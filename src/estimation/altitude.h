@@ -25,5 +25,7 @@ void AltitudeKF_Predict(float verticalAccel_ms2, float dT);
 void AltitudeKF_UpdateBaro(float baroAltitude);
 
 const AltitudeKF_State_t *AltitudeKF_Get(void);
-const float GetBaseLinePress(void);
+float GetBaseLinePress(void);
+
+float Baro_MovingAverage(float newPressure);
 #endif

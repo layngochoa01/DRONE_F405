@@ -1,15 +1,20 @@
 #include "altitude.h"
 #include "../drivers/uart5.h"
 #include <math.h>
-
+#include <stdbool.h>
 #define BIAS_FREEZE_VELOCITY_THRESHOLD 0.15f
 #define VELOCITY_DAMPING 0.98f//0.998f
 #define BARO_INNOVATION_GATE          3.0f// 0.5f 
+#define BARO_MA_WINDOW 4
 
 static float x[3]; 
 static float P[3][3];
 static float Q[3];  //noise
 static float R;     //measurement noise R
+
+static float s_pressBuf[BARO_MA_WINDOW];
+static uint8_t s_pressIdx = 0;
+static bool s_pressBufFull = false;
 
 static AltitudeBaro_t s_baro;  
 
@@ -162,7 +167,19 @@ const AltitudeKF_State_t *AltitudeKF_Get(void)
     return &out;
 }
 
-const float GetBaseLinePress()
+float GetBaseLinePress()
 {
     return s_baro.baselinePressure;
+}
+
+float Baro_MovingAverage(float newPressure)
+{
+    s_pressBuf[s_pressIdx] = newPressure;
+    s_pressIdx = (s_pressIdx + 1) % BARO_MA_WINDOW;
+    if (s_pressIdx == 0) s_pressBufFull = true;
+
+    int n = s_pressBufFull ? BARO_MA_WINDOW : s_pressIdx;
+    float sum = 0;
+    for (int i = 0; i < n; i++) sum += s_pressBuf[i];
+    return sum / (float)n;
 }

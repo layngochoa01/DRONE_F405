@@ -2,23 +2,9 @@
 
 #include <stdint.h>
 
-/*
- * register.h - STM32F405 peripheral register map
- * Tự định nghĩa địa chỉ thanh ghi, không dùng stm32f4xx.h
- * Tham chiếu: STM32F405 Reference Manual (RM0090)
- */
-
-/* =========================================================
- * KIỂU DỮ LIỆU TRUY CẬP THANH GHI
- * volatile: báo compiler không cache giá trị, phải đọc RAM/register thật
- * ========================================================= */
 #define REG32(addr)   (*(volatile uint32_t *)(addr))
 #define REG16(addr)   (*(volatile uint16_t *)(addr))
 #define REG8(addr)    (*(volatile uint8_t  *)(addr))
-
-/* =========================================================
- * BASE ADDRESS - RM0090 Table 1 (Memory Map)
- * ========================================================= */
 
 #define PERIPH_BASE         0x40000000UL
 #define AHB1_BASE           (PERIPH_BASE + 0x00020000UL)
@@ -34,12 +20,10 @@
 #define SPI1_BASE           (APB2_BASE + 0x3000UL)   
 #define I2C1_BASE           (APB1_BASE + 0x5400UL)
 
+#define USART2_BASE         (APB1_BASE + 0x4400UL)
 #define UART5_BASE          (APB1_BASE + 0x5000UL)   
 #define DMA2_BASE           (AHB1_BASE + 0x6400UL)   
 
-/* =========================================================
- * RCC REGISTERS - RM0090 Section 6.3
- * ========================================================= */
 typedef struct {
     volatile uint32_t CR;           /* 0x00 - Clock control */
     volatile uint32_t PLLCFGR;     /* 0x04 - PLL configuration */
@@ -158,47 +142,44 @@ typedef struct {
 #define GPIO_AF4_I2C1   4U
 
 #define RCC_APB1ENR_UART5EN     (1U << 20)  
-
+#define RCC_APB1ENR_USART2EN   (1U << 17)
 
 #define GPIO_AF8_UART5      8U  /
-/* =========================================================
- * SPI REGISTERS - RM0090 Section 28.5
- * ========================================================= */
+#define GPIO_AF7_USART2   7U
+
 typedef struct {
-    volatile uint32_t CR1;      /* 0x00 - Control register 1 */
-    volatile uint32_t CR2;      /* 0x04 - Control register 2 */
-    volatile uint32_t SR;       /* 0x08 - Status register */
-    volatile uint32_t DR;       /* 0x0C - Data register */
-    volatile uint32_t CRCPR;    /* 0x10 - CRC polynomial */
-    volatile uint32_t RXCRCR;   /* 0x14 - RX CRC register */
-    volatile uint32_t TXCRCR;   /* 0x18 - TX CRC register */
-    volatile uint32_t I2SCFGR;  /* 0x1C - I2S configuration */
-    volatile uint32_t I2SPR;    /* 0x20 - I2S prescaler */
+    volatile uint32_t CR1;     
+    volatile uint32_t CR2;     
+    volatile uint32_t SR;       
+    volatile uint32_t DR;       
+    volatile uint32_t CRCPR;   
+    volatile uint32_t RXCRCR;   
+    volatile uint32_t TXCRCR;   
+    volatile uint32_t I2SCFGR;  
+    volatile uint32_t I2SPR;   
 } SPI_TypeDef;
 
 #define SPI1    ((SPI_TypeDef *) SPI1_BASE)
 
-/* SPI CR1 bits - RM0090 28.5.1 */
-#define SPI_CR1_CPHA        (1U << 0)   /* Clock phase */
-#define SPI_CR1_CPOL        (1U << 1)   /* Clock polarity */
-#define SPI_CR1_MSTR        (1U << 2)   /* Master mode */
-#define SPI_CR1_BR_DIV2     (0x0U << 3) /* Baud = fPCLK/2 */
-#define SPI_CR1_BR_DIV4     (0x1U << 3) /* Baud = fPCLK/4 */
-#define SPI_CR1_BR_DIV8     (0x2U << 3) /* Baud = fPCLK/8 */
-#define SPI_CR1_BR_DIV16    (0x3U << 3) /* Baud = fPCLK/16 */
-#define SPI_CR1_BR_DIV32    (0x4U << 3) /* Baud = fPCLK/32 */
-#define SPI_CR1_BR_DIV64    (0x5U << 3) /* Baud = fPCLK/64 */
-#define SPI_CR1_BR_DIV128   (0x6U << 3) /* Baud = fPCLK/128 */
-#define SPI_CR1_BR_DIV256   (0x7U << 3) /* Baud = fPCLK/256 */
-#define SPI_CR1_SPE         (1U << 6)   /* SPI enable */
-#define SPI_CR1_SSI         (1U << 8)   /* Internal slave select */
-#define SPI_CR1_SSM         (1U << 9)   /* Software slave management */
-#define SPI_CR1_DFF         (1U << 11)  /* Data frame format (0=8bit, 1=16bit) */
+#define SPI_CR1_CPHA        (1U << 0)   
+#define SPI_CR1_CPOL        (1U << 1)   
+#define SPI_CR1_MSTR        (1U << 2)   
+#define SPI_CR1_BR_DIV2     (0x0U << 3) 
+#define SPI_CR1_BR_DIV4     (0x1U << 3) 
+#define SPI_CR1_BR_DIV8     (0x2U << 3) 
+#define SPI_CR1_BR_DIV16    (0x3U << 3) 
+#define SPI_CR1_BR_DIV32    (0x4U << 3) 
+#define SPI_CR1_BR_DIV64    (0x5U << 3) 
+#define SPI_CR1_BR_DIV128   (0x6U << 3) 
+#define SPI_CR1_BR_DIV256   (0x7U << 3) 
+#define SPI_CR1_SPE         (1U << 6)   
+#define SPI_CR1_SSI         (1U << 8)   
+#define SPI_CR1_SSM         (1U << 9)   
+#define SPI_CR1_DFF         (1U << 11)  
 
-/* SPI SR bits - RM0090 28.5.3 */
-#define SPI_SR_RXNE         (1U << 0)   /* Receive buffer not empty */
-#define SPI_SR_TXE          (1U << 1)   /* Transmit buffer empty */
-#define SPI_SR_BSY          (1U << 7)   /* Busy flag */
+#define SPI_SR_RXNE         (1U << 0)   
+#define SPI_SR_TXE          (1U << 1) 
+#define SPI_SR_BSY          (1U << 7)   
 
 /* =========================================================
  * I2C REGISTERS - RM0090 Section 27.6
@@ -232,37 +213,42 @@ typedef struct {
 
 #define I2C1_SCL_PIN        8U  
 #define I2C1_SDA_PIN        7U
-/* =========================================================
- * USART/UART REGISTERS - RM0090 Section 30.6
- * ========================================================= */
+
 typedef struct {
-    volatile uint32_t SR;       /* 0x00 - Status register */
-    volatile uint32_t DR;       /* 0x04 - Data register */
-    volatile uint32_t BRR;      /* 0x08 - Baud rate register */
-    volatile uint32_t CR1;      /* 0x0C - Control register 1 */
-    volatile uint32_t CR2;      /* 0x10 - Control register 2 */
-    volatile uint32_t CR3;      /* 0x14 - Control register 3 */
-    volatile uint32_t GTPR;     /* 0x18 - Guard time and prescaler */
+    volatile uint32_t SR;       
+    volatile uint32_t DR;       
+    volatile uint32_t BRR;      
+    volatile uint32_t CR1;      
+    volatile uint32_t CR2;      
+    volatile uint32_t CR3;      
+    volatile uint32_t GTPR;   
 } USART_TypeDef;
 
 #define UART5   ((USART_TypeDef *) UART5_BASE)
+#define USART2   ((USART_TypeDef *) USART2_BASE)
 
-/* USART CR1 bits - RM0090 30.6.4 */
-#define USART_CR1_RE        (1U << 2)   /* Receiver enable */
-#define USART_CR1_TE        (1U << 3)   /* Transmitter enable */
-#define USART_CR1_RXNEIE    (1U << 5)   /* RXNE interrupt enable */
-#define USART_CR1_TXEIE     (1U << 7)   /* TXE interrupt enable */
-#define USART_CR1_UE        (1U << 13)  /* USART enable */
+#define USART_CR1_RE        (1U << 2)   
+#define USART_CR1_TE        (1U << 3)   
+#define USART_CR1_RXNEIE    (1U << 5)   
+#define USART_CR1_TXEIE     (1U << 7)   
+#define USART_CR1_UE        (1U << 13)  
 
-/* USART SR bits - RM0090 30.6.1 */
-#define USART_SR_PE         (1U << 0)   /* Parity error    */
-#define USART_SR_FE         (1U << 1)   /* Framing error   */
-#define USART_SR_NE         (1U << 2)   /* Noise error     */
-#define USART_SR_ORE        (1U << 3)   /* Overrun error   */
-#define USART_SR_TC         (1U << 6)   /* TX complete     */
-#define USART_SR_RXNE       (1U << 5)   /* Read data register not empty */
-#define USART_SR_TXE        (1U << 7)   /* Transmit data register empty */
+#define USART_SR_PE         (1U << 0)   
+#define USART_SR_FE         (1U << 1)   
+#define USART_SR_NE         (1U << 2)   
+#define USART_SR_ORE        (1U << 3)   
+#define USART_SR_TC         (1U << 6)  
+#define USART_SR_RXNE       (1U << 5)   
+#define USART_SR_TXE        (1U << 7)   
 
+#define USART_CR1_PS         (1U << 9)   
+#define USART_CR1_PCE        (1U << 10)   
+#define USART_CR1_M          (1U << 12)  
+
+#define USART_CR2_STOP_2BIT  (2U << 12)  
+
+#define USART2_TX_PIN   2U 
+#define USART2_RX_PIN   3U
 /* =========================================================
  * DMA STREAM REGISTERS
  * ========================================================= */
@@ -422,19 +408,41 @@ typedef struct {
 
 #define NVIC    ((NVIC_TypeDef *) NVIC_BASE)
 
+#define TIM2_BASE           0x40000000UL  
 
-/* =========================================================
- * PIN DEFINITIONS - Theo target.h của BLUEBERRY F405
- * ========================================================= */
+typedef struct {
+    volatile uint32_t CR1;     /* 0x00 - Control register 1 */
+    volatile uint32_t CR2;     /* 0x04 - Control register 2 */
+    volatile uint32_t SMCR;    /* 0x08 - Slave mode control */
+    volatile uint32_t DIER;    /* 0x0C - DMA/Interrupt enable */
+    volatile uint32_t SR;      /* 0x10 - Status register */
+    volatile uint32_t EGR;     /* 0x14 - Event generation */
+    volatile uint32_t CCMR1;   /* 0x18 - Capture/compare mode 1 */
+    volatile uint32_t CCMR2;   /* 0x1C - Capture/compare mode 2 */
+    volatile uint32_t CCER;    /* 0x20 - Capture/compare enable */
+    volatile uint32_t CNT;     /* 0x24 - Counter */
+    volatile uint32_t PSC;     /* 0x28 - Prescaler */
+    volatile uint32_t ARR;     /* 0x2C - Auto-reload */
+} TIM_TypeDef;
 
-/* LED pins */
+#define TIM2    ((TIM_TypeDef *) TIM2_BASE)
+
+#define RCC_APB1ENR_TIM2EN      (1U << 0)
+
+#define TIM_CR1_CEN             (1U << 0)  
+#define TIM_CR1_URS             (1U << 2)   
+#define TIM_DIER_UIE            (1U << 0)  
+#define TIM_SR_UIF              (1U << 0)   
+#define TIM_EGR_UG              (1U << 0)   
+#define NVIC_TIM2_IRQ           28U
+
 #define LED_BLUE_PIN    14U   /* PA14 - LED xanh dương */
 #define LED_RED_PIN   13U   /* PA13 - LED đỏ */
 
-/* SPI1 pins - RM0090 Table 9 AF mapping */
-#define SPI1_SCK_PIN    5U    /* PA5  - SPI1_SCK  (AF5) */
-#define SPI1_MISO_PIN   4U    /* PB4  - SPI1_MISO (AF5) */  /* BLUEBERRY dùng PB4, không phải PA6 */
-#define SPI1_MOSI_PIN   7U    /* PA7  - SPI1_MOSI (AF5) */
+#define SPI1_SCK_PIN    5U    /* PA5  */
+#define SPI1_MISO_PIN   4U    /* PB4 */
+#define SPI1_MOSI_PIN   7U    /* PA7  */
 
-/* ICM42605 CS pin */
-#define ICM42605_CS_PIN 14U   /* PC14 - Chip Select (GPIO output) */
+#define ICM42605_CS_PIN 14U   
+
+

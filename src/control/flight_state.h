@@ -2,7 +2,7 @@
 #define FLIGHT_STATE_H
 
 #include <stdbool.h>
-#include "../drivers/hc05.h"  
+#include "../sensors/hc05.h"  
 
 typedef enum {
     FLIGHT_STATE_DISARMED,
