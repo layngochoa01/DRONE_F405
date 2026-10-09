@@ -1,6 +1,7 @@
 #include "imu.h"
 #include <math.h>
 #include <stddef.h>
+#include <stdbool.h>
 // #include "uart5.h"
 // static uint8_t imu_debug_counter = 0;
 
@@ -68,9 +69,45 @@ static float imuComputeAccWeight(const IMU_t *imu, const Vec3_t *gyro, const Vec
     return w_near * w_rate;
 }
 
-static void imuMahonyUpdate(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel, float accWeight, float dT)
+/* Lỗi heading từ magnetometer (body frame).
+ * Giả sử từ trường vuông góc trọng lực: chiếu mag xuống mặt phẳng ngang (EF),
+ * so với hướng Bắc tham chiếu (1,0,0) → lỗi chỉ có thành phần Z trong EF,
+ * nên mag chỉ sửa yaw, không làm lệch roll/pitch. */
+static bool imuComputeMagError(const IMU_t *imu, const Vec3_t *mag, Vec3_t *vErr)
 {
-    Vec3_t vRotation = *gyro;  
+    if (vec3NormSq(mag) < 1e-12f) return false;
+
+    Vec3_t m;
+    vec3Normalize(&m, mag);
+
+    float hx = imu->rMat[0][0]*m.x + imu->rMat[0][1]*m.y + imu->rMat[0][2]*m.z;
+    float hy = imu->rMat[1][0]*m.x + imu->rMat[1][1]*m.y + imu->rMat[1][2]*m.z;
+    float bx = sqrtf(hx*hx + hy*hy);
+    if (bx < 1e-3f) return false;   /* mag gần thẳng đứng → không có thông tin heading */
+
+    float ezEf = -(hy * bx);
+
+    vErr->x = imu->rMat[2][0] * ezEf;
+    vErr->y = imu->rMat[2][1] * ezEf;
+    vErr->z = imu->rMat[2][2] * ezEf;
+    return true;
+}
+
+static void imuMahonyUpdate(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel, float accWeight, const Vec3_t *mag, float dT)
+{
+    Vec3_t vRotation = *gyro;
+
+    Vec3_t vMagErr;
+    if (mag && imuComputeMagError(imu, mag, &vMagErr)) {
+        float spinLimit = (IMU_SPIN_RATE_LIMIT * M_PIf / 180.0f);
+        if (imu->ki > 0.0f && vec3NormSq(gyro) < spinLimit * spinLimit) {
+            imu->gyroDrift.z += vMagErr.z * imu->ki * dT;
+        }
+        vRotation.x += vMagErr.x * IMU_KP_MAG;
+        vRotation.y += vMagErr.y * IMU_KP_MAG;
+        vRotation.z += vMagErr.z * IMU_KP_MAG;
+    }
+
     if (accel && accWeight > 0.001f) {
         Vec3_t vEstGravity = {imu->rMat[2][0], imu->rMat[2][1], imu->rMat[2][2] };
 
@@ -153,11 +190,11 @@ void IMU_Init(IMU_t *imu, float kp, float ki, float dT)
     imuComputeRotationMatrix(imu);
 }
 
-void IMU_Update(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel, float dT)
+void IMU_Update(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel, const Vec3_t *mag, float dT)
 {
     float accWeight = imuComputeAccWeight(imu, gyro, accel);
 
-    imuMahonyUpdate(imu, gyro, accel, accWeight, dT);
+    imuMahonyUpdate(imu, gyro, accel, accWeight, mag, dT);
 
     imuUpdateEulerAngles(imu);
 }

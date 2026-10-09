@@ -1,5 +1,6 @@
 #include "sbus.h"
 #include "register.h"
+#include "system.h"
 
 #define SBUS_FRAME_LEN      25
 #define SBUS_START_BYTE     0x0F

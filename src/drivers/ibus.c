@@ -1,5 +1,6 @@
 #include "ibus.h"
 #include "register.h"
+#include "system.h"
 
 #define IBUS_TIMEOUT_MS 500U
 

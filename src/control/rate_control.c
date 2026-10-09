@@ -10,12 +10,22 @@ void RateControl_Init(void)
     PID_Init(&s_pidYaw,   1.0f, 0.03f, 0.0f);
 }
 
+void RateControl_Reset(const Vec3_t *gyroDegS)
+{
+    PID_Reset(&s_pidRoll);
+    PID_Reset(&s_pidPitch);
+    PID_Reset(&s_pidYaw);
+    s_pidRoll.prevMeasurement  = gyroDegS->x;
+    s_pidPitch.prevMeasurement = gyroDegS->y;
+    s_pidYaw.prevMeasurement   = gyroDegS->z;
+}
+
 void RateControl_Update(Vec3_t *output, const Vec3_t *rateSetpointDegS, const Vec3_t *gyroDegS, float dT)
 {
     float errRoll  = rateSetpointDegS->x - gyroDegS->x;
     float errPitch = rateSetpointDegS->y - gyroDegS->y;
     float errYaw   = rateSetpointDegS->z - gyroDegS->z;
-    output->x = PID_Update(&s_pidRoll,  errRoll,  gyroDegS->x, dT, -500.0f, 500.0f);
-    output->y = PID_Update(&s_pidPitch, errPitch, gyroDegS->y, dT, -500.0f, 500.0f);
-    output->z = PID_Update(&s_pidYaw,   errYaw,   gyroDegS->z, dT, -500.0f, 500.0f);
+    output->x = PID_Update(&s_pidRoll,  errRoll,  gyroDegS->x, dT, -RATE_OUT_LIMIT_RP,  RATE_OUT_LIMIT_RP);
+    output->y = PID_Update(&s_pidPitch, errPitch, gyroDegS->y, dT, -RATE_OUT_LIMIT_RP,  RATE_OUT_LIMIT_RP);
+    output->z = PID_Update(&s_pidYaw,   errYaw,   gyroDegS->z, dT, -RATE_OUT_LIMIT_YAW, RATE_OUT_LIMIT_YAW);
 }

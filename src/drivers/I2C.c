@@ -48,7 +48,16 @@ static bool I2C1_Start(uint8_t devAddr, uint8_t rw)
     if (!I2C1_WaitFlag(&I2C1->SR1, I2C_SR1_SB, 1)) return false;
 
     I2C1->DR = (uint32_t)((devAddr << 1) | rw);
-    if (!I2C1_WaitFlag(&I2C1->SR1, I2C_SR1_ADDR, 1)) return false;
+
+    /* Chờ ADDR; nếu thiết bị không trả lời (NACK → AF) thì thoát ngay và xóa AF */
+    uint32_t timeout = I2C_TIMEOUT;
+    while (!(I2C1->SR1 & I2C_SR1_ADDR)) {
+        if (I2C1->SR1 & I2C_SR1_AF) {
+            I2C1->SR1 &= ~I2C_SR1_AF;
+            return false;
+        }
+        if (--timeout == 0) return false;
+    }
 
     (void)I2C1->SR1;
     (void)I2C1->SR2;   

@@ -91,6 +91,21 @@ static void flash_clear_errors(void)
     FLASH->SR = FLASH_SR_ERR_MASK | FLASH_SR_EOP;
 }
 
+/* ACR bits — flush cache sau khi xóa/ghi, tránh đọc dữ liệu cũ còn trong cache */
+#define FLASH_ACR_ICEN   (1U << 9)
+#define FLASH_ACR_DCEN   (1U << 10)
+#define FLASH_ACR_ICRST  (1U << 11)
+#define FLASH_ACR_DCRST  (1U << 12)
+
+static void flash_flush_caches(void)
+{
+    uint32_t acr = FLASH->ACR;
+    FLASH->ACR = acr & ~(FLASH_ACR_ICEN | FLASH_ACR_DCEN);
+    FLASH->ACR = (acr & ~(FLASH_ACR_ICEN | FLASH_ACR_DCEN)) | FLASH_ACR_ICRST | FLASH_ACR_DCRST;
+    FLASH->ACR = acr & ~(FLASH_ACR_ICEN | FLASH_ACR_DCEN);
+    FLASH->ACR = acr;
+}
+
 static FlashStatus_t flash_erase_sector11(void)
 {
     flash_wait_busy();
@@ -139,9 +154,43 @@ static FlashStatus_t flash_write_slot(uint32_t addr, const CalibData_t *data)
     return FLASH_OK;
 }
 
-static const CalibData_t *flash_read_slot(uint32_t addr)
+static const CalibData_t *flash_read_slot(uint32_t index)
 {
-    return (const CalibData_t *)addr;
+    return (const CalibData_t *)(FLASH_SECTOR11_ADDR + index * FLASH_SLOT_SIZE);
+}
+
+static uint8_t flash_slot_is_blank(uint32_t index)
+{
+    const uint32_t *p = (const uint32_t *)flash_read_slot(index);
+    for (uint32_t i = 0; i < sizeof(CalibData_t) / 4U; i++) {
+        if (p[i] != 0xFFFFFFFFUL) return 0;
+    }
+    return 1;
+}
+
+/* Tìm slot hợp lệ có sequence lớn nhất, và slot trống đầu tiên phía sau nó */
+static int32_t flash_scan(int32_t *firstBlank)
+{
+    int32_t  best = -1;
+    uint32_t bestSeq = 0;
+
+    for (uint32_t i = 0; i < FLASH_SLOT_COUNT; i++) {
+        const CalibData_t *d = flash_read_slot(i);
+        if (FlashStorage_IsValid(d) && (best < 0 || d->sequence > bestSeq)) {
+            best = (int32_t)i;
+            bestSeq = d->sequence;
+        }
+    }
+
+    *firstBlank = -1;
+    uint32_t start = (best < 0) ? 0U : (uint32_t)best + 1U;
+    for (uint32_t i = start; i < FLASH_SLOT_COUNT; i++) {
+        if (flash_slot_is_blank(i)) {
+            *firstBlank = (int32_t)i;
+            break;
+        }
+    }
+    return best;
 }
 
 /* =========================================================
@@ -157,79 +206,44 @@ uint8_t FlashStorage_IsValid(const CalibData_t *data)
 
 FlashStatus_t FlashStorage_Init(CalibData_t *out)
 {
-    const CalibData_t *slot0 = flash_read_slot(FLASH_SLOT0_ADDR);
-    const CalibData_t *slot1 = flash_read_slot(FLASH_SLOT1_ADDR);
+    int32_t blank;
+    int32_t best = flash_scan(&blank);
+    if (best < 0) return FLASH_ERR_NO_DATA;
 
-    uint8_t v0 = FlashStorage_IsValid(slot0);
-    uint8_t v1 = FlashStorage_IsValid(slot1);
-
-    if (!v0 && !v1) {
-        return FLASH_ERR_NO_DATA;   
-    }
-
-    const CalibData_t *best = NULL;
-
-    if (v0 && v1) {
-        best = (slot0->sequence > slot1->sequence) ? slot0 : slot1;
-    } else if (v0) {
-        best = slot0;
-    } else {
-        best = slot1;
-    }
-
-    memcpy(out, best, sizeof(CalibData_t));
+    memcpy(out, flash_read_slot((uint32_t)best), sizeof(CalibData_t));
     return FLASH_OK;
 }
 
 FlashStatus_t FlashStorage_Save(const CalibData_t *data)
 {
-    const CalibData_t *slot0 = flash_read_slot(FLASH_SLOT0_ADDR);
-    const CalibData_t *slot1 = flash_read_slot(FLASH_SLOT1_ADDR);
-
-    uint8_t v0 = FlashStorage_IsValid(slot0);
-    uint8_t v1 = FlashStorage_IsValid(slot1);
-
-    uint32_t write_addr;
-    uint32_t new_seq;
-
-    if (!v0 && !v1) {
-        write_addr = FLASH_SLOT0_ADDR;
-        new_seq    = 1U;
-    } else if (v0 && !v1) {
-        write_addr = FLASH_SLOT1_ADDR;
-        new_seq    = slot0->sequence + 1U;
-    } else if (!v0 && v1) {
-        write_addr = FLASH_SLOT0_ADDR;
-        new_seq    = slot1->sequence + 1U;
-    } else {
-        if (slot0->sequence <= slot1->sequence) {
-            write_addr = FLASH_SLOT0_ADDR;
-            new_seq    = slot1->sequence + 1U;
-        } else {
-            write_addr = FLASH_SLOT1_ADDR;
-            new_seq    = slot0->sequence + 1U;
-        }
-    }
+    int32_t blank;
+    int32_t best = flash_scan(&blank);
 
     CalibData_t new_data = *data;
     new_data.magic    = FLASH_MAGIC;
-    new_data.sequence = new_seq;
+    new_data.sequence = (best < 0) ? 1U : flash_read_slot((uint32_t)best)->sequence + 1U;
     new_data.crc      = calib_crc(&new_data);
 
-    FlashStatus_t status;
+    FlashStatus_t status = FLASH_OK;
     flash_unlock();
 
-    if (!v0 && !v1) {
+    /* Hết slot trống → xóa cả sector, ghi lại từ đầu */
+    if (blank < 0) {
         status = flash_erase_sector11();
-        if (status != FLASH_OK) {
-            flash_lock();
-            return status;
-        }
+        flash_flush_caches();
+        blank = 0;
     }
 
-    status = flash_write_slot(write_addr, &new_data);
+    if (status == FLASH_OK) {
+        status = flash_write_slot(FLASH_SECTOR11_ADDR + (uint32_t)blank * FLASH_SLOT_SIZE, &new_data);
+        flash_flush_caches();
+    }
     flash_lock();
 
+    /* Đọc lại để chắc chắn đã ghi đúng */
+    if (status == FLASH_OK && !FlashStorage_IsValid(flash_read_slot((uint32_t)blank))) {
+        status = FLASH_ERR_WRITE;
+    }
     return status;
 }
 
@@ -237,6 +251,15 @@ FlashStatus_t FlashStorage_Erase(void)
 {
     flash_unlock();
     FlashStatus_t status = flash_erase_sector11();
+    flash_flush_caches();
     flash_lock();
     return status;
+}
+
+int32_t FlashStorage_GetActiveSlot(uint32_t *sequence)
+{
+    int32_t blank;
+    int32_t best = flash_scan(&blank);
+    if (sequence) *sequence = (best < 0) ? 0U : flash_read_slot((uint32_t)best)->sequence;
+    return best;
 }

@@ -422,10 +422,13 @@ void ICM42605_ApplyCalibration(ICM42605_Data *data, const ICM_Calibration_t *cal
     }
 }
 
+/* Chip gắn ÚP NGƯỢC (đo thực tế: nằm phẳng → az_chip = -g; chúc mũi → ay_chip = +g).
+ * Body frame FLU (X mũi, Y trái, Z lên):
+ *   X_body = -Y_chip,  Y_body = -X_chip,  Z_body = -Z_chip   (det = +1, phép quay) */
 void ICM42605_RemapAxes(ICM42605_Data *data)
 {
-    float ax = - data->accel_y, ay = - data->accel_x, az = data->accel_z;
-    float gx = - data->gyro_y,  gy = - data->gyro_x,  gz = data->gyro_z;
+    float ax = - data->accel_y, ay = - data->accel_x, az = - data->accel_z;
+    float gx = - data->gyro_y,  gy = - data->gyro_x,  gz = - data->gyro_z;
 
     data->accel_x = ax; data->accel_y = ay; data->accel_z = az;
     data->gyro_x = gx; data->gyro_y = gy; data->gyro_z = gz;

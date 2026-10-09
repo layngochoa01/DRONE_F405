@@ -9,15 +9,28 @@
 #include "filter.h"
 #include "spl06.h"
 #include "altitude.h"
-#include "attitude_control.h"
-#include "rate_control.h"
-#include "ibus.h"
 #include "sbus.h"
+#include "hmc5883l.h"
+#include "gps.h"
+#include "usart1.h"
+#include "pwm_out.h"
+#include "system.h"
+#include "flight_state.h"
+#include "flight_control.h"
 
 #define NOISE_ALT   0.001f
 #define NOISE_VEL   0.001f
 #define NOISE_BIAS  0.00001f
 #define NOISE_BARO  0.0025f
+
+/* 1 = START in dữ liệu IMU THÔ theo trục chip (trước remap/calib/lọc) để xác định remap.
+ * 0 = log bay bình thường. */
+#define DEBUG_IMU_RAW  0
+
+/* 0 = chưa hàn cảm biến → bỏ qua hoàn toàn (không init, không poll).
+ * Khi tắt: POS_HOLD / FORWARD / LEFT tự bị từ chối, AHRS chỉ dùng gyro + accel. */
+#define COMPASS_ENABLE 1
+#define GPS_ENABLE     1
 
 static volatile uint32_t ms_tick = 0;
 static ICM_Calibration_t s_cal;   
@@ -110,12 +123,17 @@ void hardfault_handler(void)
     }
 }
 
-void TIM2_IRQHandler(void)
+void TIM7_IRQHandler(void)
 {
-    if (TIM2->SR & TIM_SR_UIF) {
-        TIM2->SR &= ~TIM_SR_UIF; 
+    if (TIM7->SR & TIM_SR_UIF) {
+        TIM7->SR &= ~TIM_SR_UIF; 
         ICM42605_TriggerRead();
     }
+}
+
+void USART1_IRQHandler(void)
+{
+    UART1_IRQ_Handler();
 }
 
 void USART2_IRQHandler(void)
@@ -195,6 +213,30 @@ static void handle_calib_erase(void)
     }
 }
 
+static void handle_calib_show(void)
+{
+    uint32_t seq = 0;
+    int32_t slot = FlashStorage_GetActiveSlot(&seq);
+    UART5_WriteF("FLASH slot:%ld seq:%lu | gyro_done:%d accel_done:%d\r\n",
+                 (long)slot, (unsigned long)seq, s_cal.gyro_done, s_cal.accel_done);
+    UART5_WriteF("G off: %.4f %.4f %.4f\r\n", s_cal.gx_offset, s_cal.gy_offset, s_cal.gz_offset);
+    UART5_WriteF("A off: %.4f %.4f %.4f\r\n", s_cal.ax_offset, s_cal.ay_offset, s_cal.az_offset);
+}
+
+/* Đọc ngược thanh ghi TIM1/TIM2 + GPIO để kiểm tra cấu hình PWM */
+static void handle_pwm_debug(void)
+{
+    UART5_WriteF("TIM1 CR1:%lx CNT:%lu CCER:%lx BDTR:%lx M1(CCR3):%lu M2(CCR1):%lu\r\n",
+                 TIM1->CR1, TIM1->CNT, TIM1->CCER, TIM1->BDTR, TIM1->CCR3, TIM1->CCR1);
+    UART5_WriteF("TIM2 CR1:%lx CNT:%lu CCER:%lx M3(CCR4):%lu M4(CCR3):%lu\r\n",
+                 TIM2->CR1, TIM2->CNT, TIM2->CCER, TIM2->CCR4, TIM2->CCR3);
+    UART5_WriteF("PB15 m:%lu af:%lu | PA8 m:%lu af:%lu | PB11 m:%lu af:%lu | PB10 m:%lu af:%lu\r\n",
+                 (GPIOB->MODER >> 30) & 3U, (GPIOB->AFR[1] >> 28) & 0xFU,
+                 (GPIOA->MODER >> 16) & 3U, (GPIOA->AFR[1] >> 0)  & 0xFU,
+                 (GPIOB->MODER >> 22) & 3U, (GPIOB->AFR[1] >> 12) & 0xFU,
+                 (GPIOB->MODER >> 20) & 3U, (GPIOB->AFR[1] >> 8)  & 0xFU);
+}
+
 static void handle_calib(void){
     handle_calib_gyro();
     handle_calib_accel();
@@ -239,6 +281,10 @@ int main(){
     systick_init();
     led_init();
 
+    /* ESC phải thấy 1000 µs ngay khi cấp nguồn (TIM1 APB2 168 MHz, TIM2 APB1 84 MHz) */
+    Motor_Init(168000000U, 84000000U);
+    Motor_StopAll();
+
     ICM_Status imu_status = ICM42605_Init();
 
     if (imu_status == ICM_OK) {
@@ -257,32 +303,28 @@ int main(){
 
     HC05_Init(42000000U, 115200U);
     SBUS_Init(42000000U);
+#if GPS_ENABLE
+    GPS_Init();
+#endif
     delay_ms(15000);
-    spl06_ready = SPL06_Init();
+    spl06_ready = SPL06_Init();          /* SPL06_Init cũng khởi tạo I2C1 */
     AltitudeBaro_Init(101325.0f);
 
     if (spl06_ready) {
         delay_ms(8000);
         altitude_calibrate_baseline();
-        // UART5_WriteF("BASELINE SET: %.3f Pa\r\n", GetBaseLinePress());
     }
+
+#if COMPASS_ENABLE
+    bool compass_ready = Compass_Init();
+#else
+    bool compass_ready = false;
+#endif
+    UART5_WriteF("BARO:%s MAG:%s (%s)\r\n", spl06_ready ? "OK" : "FAIL",
+                 compass_ready ? "OK" : "FAIL", Compass_TypeName());
 
     CalibData_t flash_data;
     FlashStatus_t fs = FlashStorage_Init(&flash_data);
-
-    // delay_ms(10000);
-    // UART5_WriteF(
-    //     "FLASH DATA: AX=%.6f AY=%.6f AZ=%.6f\r\n",
-    //     flash_data.ax_offset,
-    //     flash_data.ay_offset,
-    //     flash_data.az_offset
-    // );
-    //    UART5_WriteF(
-    //     "FLASH DATA: GX=%.6f GY=%.6f GZ=%.6f\r\n",
-    //     flash_data.gx_offset,
-    //     flash_data.gy_offset,
-    //     flash_data.gz_offset
-    // );
 
     if (fs == FLASH_OK) {
         s_cal.gx_offset  = flash_data.gx_offset;
@@ -296,8 +338,8 @@ int main(){
         s_cal.az_gain    = 1.0f;
         s_cal.gyro_done  = (flash_data.gyro_done  != 0U);
         s_cal.accel_done = (flash_data.accel_done != 0U);  
-        // UART5_WriteF("Calib loaded: GX:%.4f GY:%.4f GZ:%.4f\r\n", s_cal.gx_offset, s_cal.gy_offset, s_cal.gz_offset);
-        // UART5_WriteF( "ACCEL OFFSET: X=%.4f Y=%.4f Z=%.4f\r\n", s_cal.ax_offset, s_cal.ay_offset, s_cal.az_offset);
+        UART5_WriteString("Calib loaded from Flash:\r\n");
+        handle_calib_show();
     } else {
         s_cal.gx_offset = s_cal.gy_offset = s_cal.gz_offset = 0.0f;
         s_cal.ax_offset = s_cal.ay_offset = s_cal.az_offset = 0.0f;
@@ -308,82 +350,150 @@ int main(){
     }
 
     AltitudeKF_Init(NOISE_ALT, NOISE_VEL, NOISE_BIAS, NOISE_BARO);
-    // delay_ms(10000);
-    
-    Timer2_InitHz(84000000U, 100U);
-    Timer2_Start();
+    FlightControl_Init(spl06_ready, compass_ready);
 
-    ICM42605_Data   data;
-    IMUFilter_t imu_filter;
+    ICM42605_Data data;
+    IMUFilter_t   imu_filter;
+    IMU_FilterInit(&imu_filter, FC_DT);
+
+    Timer5_Init(84000000U);              /* đếm 5 s cho FORWARD / LEFT */
+    Timer7_InitHz(84000000U, FC_LOOP_HZ);   /* kích đọc IMU 100 Hz */
+    Timer7_Start();
+
 /////////////////////////////MAIN LOOP////////////////////////////////////
-    bool data_valid = false;
-    uint32_t last_blink = 0;
-    uint32_t last_log  = 0;
-    static uint32_t last_ctrl_log = 0;
+    uint32_t last_log = 0;
+    enum { LOG_NORMAL, LOG_MAG, LOG_GPS } log_mode = LOG_NORMAL;
+#if DEBUG_IMU_RAW
+    ICM42605_Data raw_chip = {0};      /* trục chip, chưa remap/calib/lọc */
+#endif
 
-    IMU_FilterInit(&imu_filter, 1.0f / 100.0f);
-    Attitude_Init(1.0f / 100.0f);
-    RateControl_Init();
-        
     while (1) {
         uint32_t now = get_tick();
 
+        /* 100 Hz: TIM7 kích đọc IMU qua DMA → toàn bộ chuỗi ước lượng + điều khiển */
         if (ICM42605_IsDataReady()) {
             ICM42605_GetLatestData(&data);
+#if DEBUG_IMU_RAW
+            raw_chip = data;               /* chép TRƯỚC khi remap để debug trục */
+#endif
             ICM42605_RemapAxes(&data);
             ICM42605_ApplyCalibration(&data, &s_cal);
             IMU_FilterApply(&imu_filter, &data);
-            Attitude_Update(&data, 1.0f / 100.0f);
-            if(data_valid){
-                float rMat[3][3];
-                Attitude_GetRotationMatrix(rMat);
-
-                float accelZ_world = Altitude_ComputeVerticalAccel(rMat, data.accel_x, data.accel_y, data.accel_z);
-                AltitudeKF_Predict(accelZ_world, 1.0f / 100.0f);
-                
-                Quaternion_t qSetpoint;
-                Quaternion_FromEuler(&qSetpoint, 0.0f, 0.0f, 0.0f);   
-                
-                Vec3_t rateSetpoint;
-                AttitudeControl_Update(&rateSetpoint, &qSetpoint, Quaternion_Get(), 5.0f, 5.0f, 3.0f);
-
-                Vec3_t gyroDegS = { data.gyro_x, data.gyro_y, data.gyro_z };
-                Vec3_t rateOutput;
-                RateControl_Update(&rateOutput, &rateSetpoint, &gyroDegS, 1.0f / 100.0f);
-
-                // if ((now - last_ctrl_log) >= 200U) {
-                //     last_ctrl_log = now;
-                //     UART5_WriteF("RSp: x=%.3f y=%.3f z=%.3f\r\n", rateSetpoint.x, rateSetpoint.y, rateSetpoint.z);
-                //     UART5_WriteF("Gy: x=%.1f y=%.1f z=%.1f \r\n", gyroDegS.x, gyroDegS.y, gyroDegS.z);
-                //     UART5_WriteF("Out: x=%.2f y=%.2f z=%.2f\r\n", rateOutput.x, rateOutput.y, rateOutput.z);
-                // }
-            }
-            data_valid = true;
+            FlightControl_Update(&data);
         }
 
+#if GPS_ENABLE
+        GPS_Process();    
+#endif
         HC05_Poll();
 
         HC05_CalibCmd cmd = HC05_GetCalibCmd();
-        if (cmd == HC05_CMD_CALIB) handle_calib();
-        if (cmd == HC05_CMD_CALIB_GYRO) handle_calib_gyro();
-        if (cmd == HC05_CMD_CALIB_ACCEL) handle_calib_accel();
-        if (cmd == HC05_CMD_CALIB_ERASE) handle_calib_erase();
 
-        if (SBUS_IsFrameReady()) {
-            uint16_t throttle = SBUS_GetChannel(2);
-            uint16_t roll     = SBUS_GetChannel(0);
-            uint16_t pitch    = SBUS_GetChannel(1);
-            uint16_t yaw      = SBUS_GetChannel(3);
-        }
-        // if ((now - last_raw_log) >= 500U) {
-        //     last_raw_log = now;
-        //     UART5_WriteF( "raw=%02X count=%lu\r\n", g_sbusLastRaw, g_sbusRawCount );
-        //     UART5_WriteF("hdr=%lu ORE=%lu FE=%lu NE=%lu\r\n", g_hdrCount, g_errORE, g_errFE, g_errNE);
-        // }
-        if (HC05_GetStreamState() == HC05_STREAM_RUN) {
-            if (data_valid && ((now - last_log) >= 100U)){
-                last_log = now;
+        /* Chế độ log + calib compass */
+        if (cmd == HC05_CMD_LOG_MAG)    { log_mode = LOG_MAG;    UART5_WriteString("LOG MAG\r\n"); }
+        if (cmd == HC05_CMD_LOG_GPS)    { log_mode = LOG_GPS;    UART5_WriteString("LOG GPS\r\n"); }
+        if (cmd == HC05_CMD_LOG_NORMAL) { log_mode = LOG_NORMAL; UART5_WriteString("LOG NORMAL\r\n"); }
+        if (cmd == HC05_CMD_MAGCAL) {
+            if (FlightState_Get() == FLIGHT_STATE_DISARMED && Compass_GetType() != COMPASS_NONE) {
+                Compass_CalStart();
+                UART5_WriteString("MAGCAL: xoay drone moi huong ~30s, xong gui MAGCALEND\r\n");
+            } else {
+                UART5_WriteString("MAGCAL DENIED (can DISARMED + co compass)\r\n");
             }
+        }
+        if (cmd == HC05_CMD_MAGCAL_END) {
+            float ox, oy, oz;
+            if (Compass_CalFinish(&ox, &oy, &oz)) {
+                UART5_WriteF("MAGCAL OK offset(chip) X:%.4f Y:%.4f Z:%.4f\r\n", ox, oy, oz);
+            } else {
+                UART5_WriteString("MAGCAL FAILED: qua it mau, xoay lau hon\r\n");
+            }
+        }
+
+        /* BENCH: thử dấu phản hồi (cần ARM trước, THÁO CÁNH) */
+        if (cmd == HC05_CMD_BENCH_ON) {
+            /* Không có tay cầm → ARM qua Bluetooth (chỉ bench, tự DISARM sau 120 s) */
+            if (FlightState_Get() == FLIGHT_STATE_DISARMED) FlightState_BluetoothBenchArm(true);
+            UART5_WriteString(FlightControl_SetBench(true)
+                              ? "BENCH ON (thao canh!) - BENCHOFF/DISARM de tat\r\n"
+                              : "BENCH DENIED: dang bay hoac chua ARM\r\n");
+        }
+        if (cmd == HC05_CMD_BENCH_OFF || HC05_GetFlightCmd() == HC05_FLIGHT_CMD_DISARM) {
+            FlightControl_SetBench(false);
+            if (FlightState_IsBluetoothArmed()) FlightState_BluetoothBenchArm(false);
+            UART5_WriteString("BENCH OFF\r\n");
+        }
+        if (FlightState_Get() == FLIGHT_STATE_DISARMED) {
+            if (cmd == HC05_CMD_CALIB)       handle_calib();
+            if (cmd == HC05_CMD_CALIB_GYRO)  handle_calib_gyro();
+            if (cmd == HC05_CMD_CALIB_ACCEL) handle_calib_accel();
+            if (cmd == HC05_CMD_CALIB_ERASE) handle_calib_erase();
+            if (cmd == HC05_CMD_CALIB_SHOW)  handle_calib_show();
+            if (cmd == HC05_CMD_PWM_DEBUG)   handle_pwm_debug();
+        }
+
+        /* Motor test qua Bluetooth: M1..M4, MALL, MSTOP (THÁO CÁNH) */
+        HC05_MotorTestCmd mcmd = HC05_GetMotorTestCmd();
+        if (mcmd == HC05_MOTOR_STOP) {
+            FlightControl_MotorTestStop();
+            UART5_WriteString("MOTOR STOP\r\n");
+        } else if (mcmd != HC05_MOTOR_NONE) {
+            int8_t idx = (mcmd == HC05_MOTOR_ALL) ? -1 : (int8_t)(mcmd - HC05_MOTOR_1);
+            if (FlightControl_MotorTest(idx)) {
+                UART5_WriteF("MOTOR TEST %s @%uus 3s\r\n",
+                             idx < 0 ? "ALL" : (idx == 0 ? "M1" : idx == 1 ? "M2" : idx == 2 ? "M3" : "M4"),
+                             FC_MOTOR_TEST_US);
+            } else {
+                UART5_WriteString("MOTOR TEST DENIED (must be DISARMED)\r\n");
+            }
+        }
+
+        if (HC05_GetStreamState() == HC05_STREAM_RUN) {
+#if DEBUG_IMU_RAW
+            if ((now - last_log) >= 200U) {
+                last_log = now;
+                HC05_SendIMU(&raw_chip);
+            }
+#else
+            if ((now - last_log) >= 200U) {
+                last_log = now;
+                const Attitude_t *att = Attitude_Get();
+                const FlightControl_Status_t *st = FlightControl_GetStatus();
+                if (log_mode == LOG_MAG) {
+                    uint32_t age;
+                    const Compass_Data_t *c = FlightControl_GetCompass(&age);
+                    float ox, oy, oz;
+                    Compass_GetOffsets(&ox, &oy, &oz);
+                    /* Trục CHIP, đã trừ offset hard-iron (chưa remap) */
+                    UART5_WriteF("MAG %s chip X:%6.3f Y:%6.3f Z:%6.3f | H:%5.1f | age:%lums%s\r\n",
+                                 Compass_TypeName(), c->rawX - ox, c->rawY - oy, c->rawZ - oz,
+                                 c->headingDeg, (unsigned long)age,
+                                 Compass_IsCalibrating() ? " [CAL]" : "");
+                } else if (log_mode == LOG_GPS) {
+                    const GPS_Stats_t *gs = GPS_GetStats();
+                    const GPS_Data_t  *g  = GPS_GetData();
+                    UART5_WriteF("GPS bytes:%lu nmea:%lu gga:%lu fixQ:%u sats:%u hdop:%.1f\r\n",
+                                 (unsigned long)gs->bytes, (unsigned long)gs->sentences,
+                                 (unsigned long)gs->gga, gs->fixQuality, g->satellites, g->hdop);
+                    if (g->fixValid) {
+                        UART5_WriteF("    lat:%.7f lon:%.7f alt:%.1f vN:%.2f vE:%.2f valid:%d\r\n",
+                                     (double)g->latE7 * 1e-7, (double)g->lonE7 * 1e-7,
+                                     g->altitudeMsl, g->velN, g->velE, (int)st->gpsValid);
+                    }
+                } else if (FlightControl_IsBench()) {
+                    UART5_WriteF("R:%5.1f P:%5.1f Y:%5.1f | M1:%4d M2:%4d M3:%4d M4:%4d\r\n",
+                                 att->roll, att->pitch, att->yaw,
+                                 (int)st->motorUs[0], (int)st->motorUs[1],
+                                 (int)st->motorUs[2], (int)st->motorUs[3]);
+                } else {
+                    UART5_WriteF("%s ALT:%.2f/%.2f R:%.1f P:%.1f Y:%.1f T:%.2f GPS:%d MAG:%d\r\n",
+                                 FlightState_Name(st->state), AltitudeKF_Get()->altitude,
+                                 FlightState_GetTargetAltitude(),
+                                 att->roll, att->pitch, att->yaw, st->throttle,
+                                 st->gpsValid, st->magHealthy);
+                }
+            }
+#endif
         }
         else led_on(LED_BLUE_PIN);
     }

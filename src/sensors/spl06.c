@@ -80,11 +80,13 @@ bool SPL06_Init(void)
     if (!I2C1_ReadReg(SPL06_ADDR, REG_COEF_SRCE, &coefSrce)) return false;
     uint8_t tmpExtBit = (coefSrce & COEF_SRCE_TMP_MASK) ? 0x80 : 0x00;
 
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x23)) return false;
+    /* PM_RATE = 8 Hz (0x3<<4), oversampling x8 (0x3) → scale 7864320, không cần P_SHIFT */
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x33)) return false;
     // if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false;
     // if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
 
-    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, tmpExtBit | 0x23)) return false;
+    /* Nhiệt độ cũng 8 Hz: SPL06_Update chờ cả PRS_RDY và TMP_RDY */
+    if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, tmpExtBit | 0x33)) return false;
     if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
     return true;
 }

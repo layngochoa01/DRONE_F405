@@ -14,6 +14,8 @@ C_SRCS = \
     src/sensors/icm42605.c \
 	src/sensors/hc05.c	\
 	src/sensors/spl06.c \
+	src/sensors/hmc5883l.c \
+	src/sensors/gps.c \
 	src/drivers/spi.c \
 	src/drivers/uart5.c	\
 	src/drivers/I2C.c	\
@@ -21,17 +23,24 @@ C_SRCS = \
 	src/drivers/flash_storage.c \
 	src/drivers/ibus.c \
 	src/drivers/sbus.c \
+	src/drivers/pwm_out.c \
+	src/drivers/usart1.c \
 	src/syscalls.c	\
 	src/estimation/imu.c \
 	src/estimation/filter.c \
 	src/estimation/attitude.c \
 	src/estimation/quaternion.c \
 	src/estimation/altitude.c \
+	src/estimation/position.c \
 	src/control/attitude_control.c	\
+	src/control/altitude_control.c	\
 	src/control/flight_state.c	\
 	src/control/pid.c	\
 	src/control/rate_control.c	\
 	src/control/motor_mixer.c	\
+	src/control/yaw_control.c	\
+	src/control/position_control.c	\
+	src/control/flight_control.c	\
 
 
 C_INCLUDES = \

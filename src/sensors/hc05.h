@@ -5,20 +5,6 @@
 #include "icm42605.h"
 #include "../estimation/altitude.h"
 #include "../estimation/attitude.h"
-/* =========================================================
- * HC-05 Driver
- * Giao tiếp qua UART5 (PC12=TX, PD2=RX)
- * Baudrate 115200
- *
- * Protocol RX (lệnh điều khiển):
- *   "START\n"  → bắt đầu stream
- *   "STOP\n"   → dừng stream
- *   "PING\n"   → trả lời "PONG\n" để kiểm tra kết nối
- *   "CALIB_GYRO\n"   → calib gyro, lưu Flash
- *   "CALIB_ACCEL\n"  → calib accel, lưu Flash
- *   "CALIB_ERASE\n"  → xóa calib data trong Flash
- * ========================================================= */
-
 
 typedef enum {
     HC05_STREAM_STOP = 0,
@@ -31,6 +17,15 @@ typedef enum {
     HC05_CMD_CALIB_ACCEL = 2,
     HC05_CMD_CALIB_ERASE = 3,
     HC05_CMD_CALIB = 4,
+    HC05_CMD_CALIB_SHOW  = 5,
+    HC05_CMD_PWM_DEBUG   = 6,
+    HC05_CMD_BENCH_ON    = 7,
+    HC05_CMD_BENCH_OFF   = 8,
+    HC05_CMD_LOG_MAG     = 9,
+    HC05_CMD_LOG_GPS     = 10,
+    HC05_CMD_LOG_NORMAL  = 11,
+    HC05_CMD_MAGCAL      = 12,
+    HC05_CMD_MAGCAL_END  = 13,
 } HC05_CalibCmd;
 
 typedef enum {
@@ -42,7 +37,19 @@ typedef enum {
     HC05_FLIGHT_CMD_LAND   = 5,
 } HC05_FlightCmd;
 
-/* thêm vào phần khai báo hàm public, cạnh HC05_GetCalibCmd */
+/* Motor test (chỉ chạy khi DISARMED, THÁO CÁNH): "M1".."M4", "MALL", "MSTOP" */
+typedef enum {
+    HC05_MOTOR_NONE = 0,
+    HC05_MOTOR_1    = 1,
+    HC05_MOTOR_2    = 2,
+    HC05_MOTOR_3    = 3,
+    HC05_MOTOR_4    = 4,
+    HC05_MOTOR_ALL  = 5,
+    HC05_MOTOR_STOP = 6,
+} HC05_MotorTestCmd;
+
+HC05_MotorTestCmd HC05_GetMotorTestCmd(void);
+
 HC05_FlightCmd HC05_GetFlightCmd(void);
 
 void HC05_Init(uint32_t apb1_clk, uint32_t baudrate);

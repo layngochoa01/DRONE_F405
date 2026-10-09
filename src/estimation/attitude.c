@@ -8,7 +8,7 @@ void Attitude_Init(float dT)
     IMU_Init(&s_imu, IMU_KP_ACC, IMU_KI_ACC, dT);
 }
 
-void Attitude_Update(const ICM42605_Data *data, float dT)
+void Attitude_Update(const ICM42605_Data *data, const Vec3_t *mag, float dT)
 {
     Vec3_t gyro = {
         data->gyro_x * (M_PIf / 180.0f),
@@ -22,7 +22,7 @@ void Attitude_Update(const ICM42605_Data *data, float dT)
         data->accel_z * 100.0f
     };
 
-    IMU_Update(&s_imu, &gyro, &accel, dT);
+    IMU_Update(&s_imu, &gyro, &accel, mag, dT);
 }
 
 const Attitude_t *Attitude_Get(void)
@@ -38,4 +38,10 @@ const Quaternion_t *Quaternion_Get(void)
 void Attitude_GetRotationMatrix(float rMat[3][3])
 {
     GetRotationMatrix(&s_imu, rMat);
+}
+
+/* Yaw (rad, [-pi, pi]), dương = quay trái (CCW nhìn từ trên), 0 = hướng Bắc nếu có mag */
+float Attitude_GetYawRad(void)
+{
+    return atan2f(s_imu.rMat[1][0], s_imu.rMat[0][0]);
 }

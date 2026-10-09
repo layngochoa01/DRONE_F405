@@ -1,7 +1,3 @@
-/* startup.s - STM32F405 startup code
- * Tham chiếu: ARM Cortex-M4 Technical Reference Manual
- *             STM32F405 Reference Manual RM0090
- */
 
     .syntax unified
     .cpu cortex-m4
@@ -10,11 +6,9 @@
     .extern UART5_IRQHandler
     .extern  DMA2_Stream0_IRQHandler
     .extern  DMA2_Stream3_IRQHandler 
-    .extern TIM2_IRQHandler
+    .extern TIM7_IRQHandler
     .extern USART2_IRQHandler
-/* =========================================================
- * VECTOR TABLE - RM0090 Table 61 (STM32F405 interrupt vectors)
- * ========================================================= */
+    .extern USART1_IRQHandler
     .section .vectors, "a"
     .align 2
 
@@ -64,7 +58,7 @@ _vector_table:
     .word   0                   /* IRQ25: TIM1_UP_TIM10      */
     .word   0                   /* IRQ26: TIM1_TRG_TIM11     */
     .word   0                   /* IRQ27: TIM1_CC            */
-    .word   TIM2_IRQHandler     /* IRQ28: TIM2               */
+    .word   0                   /* IRQ28: TIM2 (PWM5/6, không ngắt) */
     .word   0                   /* IRQ29: TIM3               */
     .word   0                   /* IRQ30: TIM4               */
     .word   0                   /* IRQ31: I2C1_EV            */
@@ -73,7 +67,7 @@ _vector_table:
     .word   0                   /* IRQ34: I2C2_ER            */
     .word   0                   /* IRQ35: SPI1               */
     .word   0                   /* IRQ36: SPI2               */
-    .word   0                   /* IRQ37: USART1             */
+    .word   USART1_IRQHandler   /* IRQ37: USART1             */
     .word   USART2_IRQHandler   /* IRQ38: USART2             */
     .word   0                   /* IRQ39: USART3             */
     .word   0                   /* IRQ40: EXTI15_10          */
@@ -91,7 +85,7 @@ _vector_table:
     .word   0                   /* IRQ52: UART4              */
     .word   UART5_IRQHandler    /* IRQ53: UART5              */
     .word   0                   /* IRQ54: TIM6_DAC           */
-    .word   0                   /* IRQ55: TIM7               */
+    .word   TIM7_IRQHandler     /* IRQ55: TIM7 (kích đọc IMU) */
     .word   DMA2_Stream0_IRQHandler                          /* IRQ56: DMA2_Stream0       */
     .word   0                   /* IRQ57: DMA2_Stream1       */
     .word   0                   /* IRQ58: DMA2_Stream2       */
@@ -161,10 +155,7 @@ zero_bss_done:
 hang:
     b       hang
 
-/* =========================================================
- * DEFAULT EXCEPTION HANDLERS
- * .weak → có thể override từ C bằng cách định nghĩa lại hàm
- * ========================================================= */
+
     .thumb_func
     .weak   nmi_handler
     .global nmi_handler

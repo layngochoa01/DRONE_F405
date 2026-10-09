@@ -1,10 +1,32 @@
 #include "motor_mixer.h"
 #include <math.h>
 
-#define PWM_MIN      1000.0f
-#define PWM_MAX      2000.0f
-#define PWM_DISARMED 1000.0f
+#define PWM_MIN      ((float)MOTOR_MIN_US)
+#define PWM_MAX      ((float)MOTOR_MAX_US)
+#define PWM_DISARMED ((float)MOTOR_MIN_US)
 #define PWM_RANGE    (PWM_MAX - PWM_MIN) 
+
+/* =========================================================
+ * Quad X — body FLU:
+ *   +roll  = nghiêng phải  → tăng motor bên TRÁI
+ *   +pitch = chúc mũi       → tăng motor phía SAU
+ *   +yaw   = quay trái (CCW)→ tăng motor quay CW (phản lực CCW)
+ *
+ * Thứ tự hàng = chỉ số pwm_out (M1..M4), props-in:
+ *   M1 (0): S3 PB15 FR (trước-phải, CCW)    M4 FL(CW)   M1 FR(CCW)
+ *   M2 (1): S4 PA8  RR (sau-phải,  CW)             \ ^ /
+ *   M3 (2): S5 PB11 RL (sau-trái,  CCW)              X
+ *   M4 (3): S6 PB10 FL (trước-trái, CW)             / \
+ *                                       M3 RL(CCW)  M2 RR(CW)
+ * PHẢI kiểm tra bằng motor test (tháo cánh) trước khi bay.
+ * ========================================================= */
+static const float s_mix[MOTOR_COUNT][3] = {
+    /* roll   pitch   yaw */
+    { -1.0f,  -1.0f,  -1.0f },   /* M1: FR CCW */
+    { -1.0f,  +1.0f,  +1.0f },   /* M2: RR CW  */
+    { +1.0f,  +1.0f,  -1.0f },   /* M3: RL CCW */
+    { +1.0f,  -1.0f,  +1.0f },   /* M4: FL CW  */
+};
 
 static bool s_armed = false;
 
@@ -30,39 +52,31 @@ bool MotorMixer_IsArmed(void)
     return s_armed;
 }
 
-void MotorMixer_Update(MotorOutput_t *out, float throttle, const Vec3_t *rateOutput)
+void MotorMixer_Update(MotorOutput_t *out, float throttle, const Vec3_t *torque)
 {
     if (!s_armed) {
-        for (int i = 0; i < MOTOR_COUNT; i++) out->pulseUs[i] = PWM_DISARMED;
+        for (uint8_t i = 0; i < MOTOR_COUNT; i++) out->pulseUs[i] = PWM_DISARMED;
         return;
     }
 
     float mix[MOTOR_COUNT];
-    mix[0] =  rateOutput->y + rateOutput->x - rateOutput->z;   /* FL */
-    mix[1] =  rateOutput->y - rateOutput->x + rateOutput->z;   /* FR */
-    mix[2] = -rateOutput->y + rateOutput->x + rateOutput->z;   /* RL */
-    mix[3] = -rateOutput->y - rateOutput->x - rateOutput->z;   /* RR */
-
     float mixMax = 0.0f, mixMin = 0.0f;
-    for (int i = 0; i < MOTOR_COUNT; i++) {
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+        mix[i] = s_mix[i][0] * torque->x + s_mix[i][1] * torque->y + s_mix[i][2] * torque->z;
         if (mix[i] > mixMax) mixMax = mix[i];
         if (mix[i] < mixMin) mixMin = mix[i];
     }
 
-    float throttleUs = PWM_MIN + throttle * PWM_RANGE;
+    float throttleUs   = PWM_MIN + constrainf(throttle, 0.0f, 1.0f) * PWM_RANGE;
     float headroomUp   = PWM_MAX - throttleUs;
     float headroomDown = throttleUs - PWM_MIN;
 
+    /* Thu nhỏ mô-men nếu vượt khoảng PWM, giữ nguyên ga */
     float scale = 1.0f;
-    if (mixMax * 1000.0f > headroomUp && mixMax > 0.0f) {
-        scale = fminf(scale, headroomUp / (mixMax * 1000.0f));
-    }
-    if (mixMin * 1000.0f < -headroomDown && mixMin < 0.0f) {
-        scale = fminf(scale, headroomDown / (-mixMin * 1000.0f));
-    }
+    if (mixMax > headroomUp)    scale = fminf(scale, headroomUp   / mixMax);
+    if (-mixMin > headroomDown) scale = fminf(scale, headroomDown / -mixMin);
 
-    for (int i = 0; i < MOTOR_COUNT; i++) {
-        float pulse = throttleUs + mix[i] * 1000.0f * scale;
-        out->pulseUs[i] = constrainf(pulse, PWM_MIN, PWM_MAX);
+    for (uint8_t i = 0; i < MOTOR_COUNT; i++) {
+        out->pulseUs[i] = constrainf(throttleUs + mix[i] * scale, PWM_MIN, PWM_MAX);
     }
 }
