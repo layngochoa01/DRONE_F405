@@ -100,21 +100,6 @@ Chọn bằng bốn kênh đầu của tay cầm SBUS (CH1 roll, CH2 pitch, CH3 
 
 Mất tín hiệu SBUS hoặc receiver báo failsafe thì DISARM ngay. POS_HOLD, FORWARD, LEFT bị từ chối nếu thiếu GPS hoặc compass, và mất GPS giữa chừng thì tự về ALT_HOLD.
 
-## Build và nạp
-
-Cần `arm-none-eabi-gcc`, `make`, và `openocd` (ST-Link) hoặc `dfu-util` (USB DFU).
-
-```sh
-make            # tạo blueberryf405.elf / .hex / .bin
-make flash      # OpenOCD + ST-Link
-make dfu        # USB DFU (giữ nút BOOT khi cắm cáp)
-make debug      # OpenOCD + arm-none-eabi-gdb
-make dump       # disassembly xen kẽ mã nguồn
-make clean
-```
-
-Nạp qua DFU thì **rút GPS ra trước**: bootloader ROM của STM32 cũng nghe USART1, dữ liệu từ GPS làm nó bỏ chế độ USB DFU.
-
 ## Lệnh Bluetooth (HC-05, 115200 baud)
 
 Mỗi lệnh là một dòng text kết thúc bằng `\n`. Firmware khởi động mất khoảng 30 s (chờ cảm biến ổn định, lấy mốc áp suất) và chưa trả lời lệnh trong thời gian đó.
@@ -132,16 +117,6 @@ Mỗi lệnh là một dòng text kết thúc bằng `\n`. Firmware khởi độ
 | Compass | `MAGCAL`, `MAGCALEND` | Calib hard-iron bằng cách xoay drone mọi hướng |
 
 `ARM`, `HOLD`, `CLIMB`, `LAND` được parse nhưng chưa dùng, vì chế độ bay lấy từ SBUS. `DISARM` dùng để tắt chế độ BENCH.
-
-## Công cụ và kiểm thử
-
-```sh
-python3 tools/gps_logger.py            # ghi 2000 mẫu GPS hợp lệ qua /dev/rfcomm0 vào tools/LOG
-python3 tools/analyze_gps.py           # phân tích file mới nhất: std, CEP50, R95, trôi, nhiễu vận tốc
-make -C tools/ubx_test test            # test đơn vị parser UBX trên PC (gcc)
-```
-
-Parser UBX trên PC được biên dịch từ chính `src/sensors/gps.c`, kiểm tra các trường hợp: gói tốt, sai checksum, gói bị cắt giữa chừng, gói lạ dài 300 byte, `fixType` 5 (chỉ có thời gian), và NAV-PVT sai độ dài.
 
 ### Kết quả đo GPS khi đứng yên
 
@@ -161,24 +136,6 @@ Một lần đo ngoài trời, 2000 mẫu hợp lệ (fix 3D, từ 6 vệ tinh, 
 ![Vận tốc GPS khi đứng yên](docs/gps_test/static_test_velocity.png)
 
 Đây là một lần đo ở một vị trí, kéo dài khoảng 200 s. Dữ liệu thô nằm ở [docs/gps_test/](docs/gps_test/).
-
-## Cấu trúc thư mục
-
-```
-include/            register.h (bản đồ thanh ghi MCU), types.h, system.h
-src/main.c          khởi tạo, trình tự boot, ngắt, xử lý lệnh Bluetooth
-src/drivers/        spi, I2C, uart5, usart1, timer, pwm_out, sbus, flash_storage
-src/sensors/        icm42605, spl06, hmc5883l (HMC/QMC5883L), gps (UBX), hc05
-src/estimation/     quaternion, imu (AHRS), attitude, filter, altitude (Kalman), position
-src/control/        flight_control (điều phối các vòng), flight_state, altitude_control,
-                    position_control, yaw_control, attitude_control, rate_control, pid, motor_mixer
-startup.s           bảng vector, reset handler
-stm32_flash.ld      Flash 1 MB, RAM 128 KB
-tools/              gps_logger.py, analyze_gps.py, ubx_test/ (test parser UBX)
-docs/gps_test/      dữ liệu và hình của lần đo GPS
-```
-
-Khi thêm file nguồn mới, khai báo nó trong `C_SRCS` của [Makefile](Makefile).
 
 ## Trạng thái và hạn chế
 
