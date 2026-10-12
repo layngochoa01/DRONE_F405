@@ -12,7 +12,6 @@ void *_sbrk(int incr)
     return (void *)prev;
 }
 
-
 int _write(int fd, char *ptr, int len)
 {
     (void)fd;

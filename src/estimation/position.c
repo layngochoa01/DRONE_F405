@@ -4,17 +4,16 @@
 #define EARTH_RADIUS_M     6371000.0f
 #define DEG_E7_TO_RAD      (3.14159265f / 180.0f * 1e-7f)
 
-/* Hệ số hiệu chỉnh mỗi lần có fix GPS (0..1) */
-#define K_POS              0.30f   /* kéo vị trí về GPS */
-#define K_VEL              0.30f   /* kéo vận tốc về vận tốc GPS */
-#define K_VEL_FROM_POS     0.10f   /* sửa vận tốc từ sai số vị trí (khi không có vận tốc GPS) */
+#define K_POS              0.30f
+#define K_VEL              0.30f
+#define K_VEL_FROM_POS     0.10f
 
-#define MAX_GPS_JUMP_M     50.0f   /* reset estimator nếu GPS nhảy xa hơn mức này */
+#define MAX_GPS_JUMP_M     50.0f
 
 static PositionEstimate_t s_est;
 static bool     s_homeSet = false;
 static int32_t  s_homeLatE7, s_homeLonE7;
-static float    s_lonScale = 1.0f;     /* cos(lat home) */
+static float    s_lonScale = 1.0f;
 static uint32_t s_lastGpsMs = 0;
 
 void Position_Init(void)
@@ -36,7 +35,6 @@ void Position_Predict(float accN, float accW, float dT)
 
 void Position_UpdateGps(const GPS_Data_t *gps, uint32_t nowMs)
 {
-    /* Cổng chất lượng: fix 3D, đủ vệ tinh, hAcc chip báo đủ nhỏ, mẫu còn mới (gps.h) */
     if (!GPS_IsHealthy(nowMs)) {
         return;
     }
@@ -49,7 +47,6 @@ void Position_UpdateGps(const GPS_Data_t *gps, uint32_t nowMs)
         s_est = (PositionEstimate_t){ 0 };
     }
 
-    /* Hiệu E7 là số nguyên → không mất chính xác khi đổi sang mét */
     float gpsN =  (float)(gps->latE7 - s_homeLatE7) * DEG_E7_TO_RAD * EARTH_RADIUS_M;
     float gpsE =  (float)(gps->lonE7 - s_homeLonE7) * DEG_E7_TO_RAD * EARTH_RADIUS_M * s_lonScale;
     float gpsW = -gpsE;

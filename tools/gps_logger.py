@@ -31,17 +31,17 @@ COLUMNS = [
     "vAcc_mm", "velN_mmps", "velE_mmps", "velD_mmps", "gSpeed_mmps", "sAcc_mmps", "pDOP",
 ]
 COL = {name: i for i, name in enumerate(COLUMNS)}
-G_FIELDS = 1 + len(COLUMNS)          # tiền tố "G" + 16 cột = 17 phần tử
-S_FIELDS = 8                         # "S" + 7 cột
-PROGRESS_IDLE_S = 2.0                # in tiến trình khi chưa có mẫu hợp lệ
-NO_G_HINT_S = 30.0                   # quá lâu không có dòng G → gợi ý theo dòng S
+G_FIELDS = 1 + len(COLUMNS)
+S_FIELDS = 8
+PROGRESS_IDLE_S = 2.0
+NO_G_HINT_S = 30.0
 
 
 def open_port(path):
     fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
     tty.setraw(fd)
     attrs = termios.tcgetattr(fd)
-    attrs[4] = attrs[5] = termios.B115200   # rfcomm bỏ qua baud, cổng USB-UART thì cần
+    attrs[4] = attrs[5] = termios.B115200
     termios.tcsetattr(fd, termios.TCSANOW, attrs)
     termios.tcflush(fd, termios.TCIOFLUSH)
     return fd
@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--max-hacc", type=int, default=3000, help="hAcc tối đa, mm (mặc định 3000)")
     args = ap.parse_args()
 
-    log_dir = "/home/lnh/Documents/DO_AN_DRONE/BLUEBERRY/BlueberryProject/tools/LOG"
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOG")
     os.makedirs(log_dir, exist_ok=True)
     output_name = os.path.basename(args.output) if args.output else time.strftime("gps_log_%Y%m%d_%H%M%S.csv")
 
@@ -84,13 +84,13 @@ def main():
         sys.exit(f"Không mở được {args.port}: {e}\n"
                  f"Kiểm tra đã ghép đôi HC-05 và chạy: sudo rfcomm bind 0 <MAC HC-05>")
 
-    total_g = 0          # tổng dòng G hợp lệ về định dạng
-    valid = 0            # mẫu đạt điều kiện → file chính
-    rejected = 0         # mẫu không đạt → file phụ
-    bad_lines = 0        # dòng G/S sai số cột hoặc không parse được
-    last_g = None        # dòng G gần nhất (list int)
-    last_s = None        # dòng S gần nhất (list int)
-    prev_s = None        # dòng S trước đó (so sánh xem bộ đếm có tăng không)
+    total_g = 0
+    valid = 0
+    rejected = 0
+    bad_lines = 0
+    last_g = None
+    last_s = None
+    prev_s = None
     buf = b""
     t_start = time.time()
     last_g_time = t_start
@@ -165,14 +165,14 @@ def main():
                             bad_lines += 1
                         continue
                     if parts[0] != "G":
-                        continue        # tin nhắn khác (OK_START, # GPSCSV ...)
+                        continue
 
                     try:
                         if len(parts) != G_FIELDS:
                             raise ValueError
                         values = [int(x) for x in parts[1:]]
                     except ValueError:
-                        bad_lines += 1  # dòng bị cắt / nhiễu Bluetooth
+                        bad_lines += 1
                         continue
 
                     total_g += 1

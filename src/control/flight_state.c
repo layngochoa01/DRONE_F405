@@ -2,10 +2,10 @@
 #include "../drivers/sbus.h"
 #include "../drivers/timer.h"
 
-#define CH_ROLL      0U   /* CH1 */
-#define CH_PITCH     1U   /* CH2 */
-#define CH_THROTTLE  2U   /* CH3 */
-#define CH_YAW       3U   /* CH4 */
+#define CH_ROLL      0U
+#define CH_PITCH     1U
+#define CH_THROTTLE  2U
+#define CH_YAW       3U
 
 #define STICK_LOW_MAX     1200U
 #define STICK_MID_MIN     1300U
@@ -17,7 +17,7 @@
 #define GESTURE_HOLD_TIME_MS  500.0f
 
 typedef enum {
-    STICK_NONE,     /* vùng chuyển tiếp giữa các mức */
+    STICK_NONE,
     STICK_LOW,
     STICK_MID,
     STICK_HIGH,
@@ -26,24 +26,24 @@ typedef enum {
 typedef enum {
     GESTURE_NONE,
     GESTURE_CENTER,
-    GESTURE_ALT_HOLD,   /* pitch THẤP */
-    GESTURE_POS_HOLD,   /* roll  CAO  */
-    GESTURE_FORWARD,    /* pitch CAO  */
-    GESTURE_LEFT,       /* roll  THẤP */
+    GESTURE_ALT_HOLD,
+    GESTURE_POS_HOLD,
+    GESTURE_FORWARD,
+    GESTURE_LEFT,
 } Gesture_e;
 
 static FlightState_e s_state      = FLIGHT_STATE_DISARMED;
-static FlightState_e s_holdState  = FLIGHT_STATE_ALT_HOLD;   /* hold quay về sau CLIMB */
+static FlightState_e s_holdState  = FLIGHT_STATE_ALT_HOLD;
 static float      s_targetAltitude = 0.0f;
 static StickPos_e s_lastThr        = STICK_NONE;
 static float      s_armTimer       = 0.0f;
 static float      s_disarmTimer    = 0.0f;
 static Gesture_e  s_pendingGesture = GESTURE_NONE;
 static float      s_gestureTimer   = 0.0f;
-static bool       s_gestureLatched = false;   /* chờ cần phải về giữa */
-static bool       s_btArmed        = false;   /* ARM qua Bluetooth (bench) */
+static bool       s_gestureLatched = false;
+static bool       s_btArmed        = false;
 static float      s_btArmTimer     = 0.0f;
-static bool       s_altOk          = false;   /* ước lượng độ cao khỏe (cập nhật mỗi lượt) */
+static bool       s_altOk          = false;
 
 static StickPos_e stickPos(uint16_t us)
 {
@@ -63,7 +63,7 @@ static Gesture_e readGesture(uint16_t roll, uint16_t pitch)
     if (r == STICK_HIGH && p == STICK_MID)  return GESTURE_POS_HOLD;
     if (r == STICK_MID  && p == STICK_HIGH) return GESTURE_FORWARD;
     if (r == STICK_LOW  && p == STICK_MID)  return GESTURE_LEFT;
-    return GESTURE_NONE;   /* chéo hoặc chưa tới mức → bỏ qua */
+    return GESTURE_NONE;
 }
 
 static bool isMoving(void)
@@ -97,7 +97,6 @@ static void goDisarmed(void)
     resetGesture();
 }
 
-/* Vào hold: POS nếu được chọn trước đó và có GPS, ngược lại ALT */
 static void enterHold(bool navOk)
 {
     Timer5_Stop();
@@ -108,8 +107,8 @@ static void enterHold(bool navOk)
 static void applyThrottle(StickPos_e thr, float currentAltitude, bool navOk)
 {
     switch (thr) {
-        case STICK_HIGH:   /* 1. CLIMB */
-            if (!s_altOk) break;   /* không có độ cao tin cậy → không cho bay lên */
+        case STICK_HIGH:
+            if (!s_altOk) break;
             if (s_state == FLIGHT_STATE_CLIMB) {
                 s_targetAltitude += CLIMB_STEP_METERS;
             } else {
@@ -121,7 +120,7 @@ static void applyThrottle(StickPos_e thr, float currentAltitude, bool navOk)
             }
             break;
 
-        case STICK_LOW:    /* 4. LAND */
+        case STICK_LOW:
             if (FlightState_IsAirborne(s_state)) {
                 Timer5_Stop();
                 s_state = FLIGHT_STATE_LAND;
@@ -129,7 +128,7 @@ static void applyThrottle(StickPos_e thr, float currentAltitude, bool navOk)
             }
             break;
 
-        case STICK_MID:    /* dừng CLIMB / LAND, giữ độ cao hiện tại */
+        case STICK_MID:
             if (s_state == FLIGHT_STATE_CLIMB || s_state == FLIGHT_STATE_LAND) {
                 s_targetAltitude = currentAltitude;
                 enterHold(navOk);
@@ -144,19 +143,19 @@ static void applyThrottle(StickPos_e thr, float currentAltitude, bool navOk)
 static void applyGesture(Gesture_e g, bool navOk)
 {
     switch (g) {
-        case GESTURE_ALT_HOLD:   /* 2. */
+        case GESTURE_ALT_HOLD:
             Timer5_Stop();
             s_state = s_holdState = FLIGHT_STATE_ALT_HOLD;
             break;
 
-        case GESTURE_POS_HOLD:   /* 3. */
+        case GESTURE_POS_HOLD:
             if (!navOk) break;
             Timer5_Stop();
             s_state = s_holdState = FLIGHT_STATE_POS_HOLD;
             break;
 
-        case GESTURE_FORWARD:    /* 5. */
-        case GESTURE_LEFT:       /* 6. */
+        case GESTURE_FORWARD:
+        case GESTURE_LEFT:
             if (!navOk || isMoving()) break;
             s_state = (g == GESTURE_FORWARD) ? FLIGHT_STATE_MOVE_FORWARD : FLIGHT_STATE_MOVE_LEFT;
             Timer5_StartOneShot(MOVE_DURATION_MS);
@@ -165,7 +164,6 @@ static void applyGesture(Gesture_e g, bool navOk)
         default:
             break;
     }
-    /* s_targetAltitude giữ nguyên → độ cao không đổi khi đổi chế độ / di chuyển */
 }
 
 void FlightState_Init(void)
@@ -178,7 +176,6 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
     float dtMs = dT * 1000.0f;
     s_altOk = altOk;
 
-    /* ARM qua Bluetooth (bench): bỏ qua SBUS, chỉ đếm thời gian an toàn */
     if (s_btArmed) {
         s_btArmTimer += dtMs;
         if (s_btArmTimer >= BT_BENCH_TIMEOUT_MS) goDisarmed();
@@ -198,7 +195,6 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
     StickPos_e thr = stickPos(thrUs);
     StickPos_e yaw = stickPos(yawUs);
 
-    /* DISARM: ga thấp + yaw trái, giữ 0.5 s */
     if (s_state != FLIGHT_STATE_DISARMED && thr == STICK_LOW && yaw == STICK_LOW) {
         s_disarmTimer += dtMs;
         if (s_disarmTimer >= DISARM_HOLD_TIME_MS) {
@@ -209,7 +205,6 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
         s_disarmTimer = 0.0f;
     }
 
-    /* ARM: ga thấp + yaw phải, giữ 1 s */
     if (s_state == FLIGHT_STATE_DISARMED) {
         if (thr == STICK_LOW && yaw == STICK_HIGH) {
             s_armTimer += dtMs;
@@ -218,7 +213,7 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
                 s_holdState      = FLIGHT_STATE_ALT_HOLD;
                 s_targetAltitude = 0.0f;
                 s_armTimer       = 0.0f;
-                s_lastThr        = thr;   /* tránh kích hoạt LAND ngay */
+                s_lastThr        = thr;
             }
         } else {
             s_armTimer = 0.0f;
@@ -226,9 +221,6 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
         return;
     }
 
-    /* Failsafe độ cao: đang bay mà mất ước lượng độ cao → hạ cánh mù.
-     * Trong LAND_BLIND bỏ qua mọi cần trừ cử chỉ DISARM (đã xử lý ở trên);
-     * độ cao khỏe lại → giữ độ cao tại chỗ. */
     if (s_state == FLIGHT_STATE_LAND_BLIND) {
         s_lastThr = thr;
         if (altOk) {
@@ -244,13 +236,11 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
         return;
     }
 
-    /* Cần ga: CLIMB / LAND / dừng (kích theo cạnh — chỉ khi đổi mức) */
     if (thr != STICK_NONE && thr != s_lastThr) {
         applyThrottle(thr, currentAltitude, navOk);
     }
     s_lastThr = thr;
 
-    /* Cần phải: chọn chế độ khi ga ở GIỮA và đang hold/di chuyển */
     Gesture_e g = readGesture(roll, pitch);
     if (g == GESTURE_CENTER) {
         s_gestureLatched = false;
@@ -263,14 +253,13 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
         s_gestureTimer += dtMs;
         if (s_gestureTimer >= GESTURE_HOLD_TIME_MS) {
             applyGesture(g, navOk);
-            s_gestureLatched = true;   /* phải thả cần về giữa mới nhận lệnh tiếp */
+            s_gestureLatched = true;
             resetGesture();
         }
     } else {
         resetGesture();
     }
 
-    /* Chuyển trạng thái tự động */
     switch (s_state) {
         case FLIGHT_STATE_CLIMB:
             if (currentAltitude >= s_targetAltitude - 0.1f) enterHold(navOk);
@@ -290,7 +279,7 @@ void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
                 s_state = s_holdState = FLIGHT_STATE_ALT_HOLD;
             } else if (Timer5_IsExpired()) {
                 Timer5_Stop();
-                s_state = s_holdState = FLIGHT_STATE_POS_HOLD;   /* hết 5 s → hold tại chỗ mới */
+                s_state = s_holdState = FLIGHT_STATE_POS_HOLD;
             }
             break;
 

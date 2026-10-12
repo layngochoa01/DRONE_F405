@@ -6,7 +6,7 @@ void AttitudeControl_ComputeError(Vec3_t *errorVec, const Quaternion_t *qSetpoin
     Quaternion_t qCurrentConj, qErr;
 
     Quaternion_Conjugate(&qCurrentConj, qCurrent);
-    Quaternion_Multiply(&qErr, &qCurrentConj, qSetpoint);   
+    Quaternion_Multiply(&qErr, &qCurrentConj, qSetpoint);
     if (qErr.q0 < 0.0f) {
         qErr.q0 = -qErr.q0;
         qErr.q1 = -qErr.q1;

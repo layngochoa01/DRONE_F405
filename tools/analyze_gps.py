@@ -16,9 +16,9 @@ import sys
 
 import numpy as np
 
-M_PER_E7_DEG = 0.01113195          # 1e-7 độ vĩ ≈ 0.01113195 m
-ITOW_WEEK_MS = 604800000           # iTOW quay vòng mỗi tuần GPS
-GAP_MS = 150                       # dt iTOW lớn hơn → coi là hụt mẫu (ở 10 Hz)
+M_PER_E7_DEG = 0.01113195
+ITOW_WEEK_MS = 604800000
+GAP_MS = 150
 JUMP_WARN_M = 2.0
 JUMP_FAIL_M = 5.0
 
@@ -44,7 +44,7 @@ def int_mean(a):
 
 
 def main():
-    LOG_DIR = "/home/lnh/Documents/DO_AN_DRONE/BLUEBERRY/BlueberryProject/tools/LOG"
+    LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOG")
     ap = argparse.ArgumentParser(description="Phân tích log GPS đứng yên")
     ap.add_argument("csv", nargs="?", default=None, help="Tên hoặc đường dẫn file CSV (mặc định lấy file mới nhất trong LOG)")
     ap.add_argument("--max-std-m", type=float, default=1.0, help="ngưỡng std ngang (m), mặc định 1.0")
@@ -69,7 +69,6 @@ def main():
         args.csv = max(csv_files, key=os.path.getmtime)
 
     elif not os.path.isabs(args.csv):
-        # Nếu chỉ nhập tên file, tìm trong thư mục LOG
         candidate = os.path.join(LOG_DIR, args.csv)
         if os.path.isfile(candidate):
             args.csv = candidate
@@ -81,16 +80,14 @@ def main():
     if n < 3:
         sys.exit("Cần ít nhất 3 mẫu")
 
-    # ---- Thời gian theo iTOW (không dùng tick của board) ----
     dt_ms = np.diff(d["iTOW"])
-    dt_ms = np.where(dt_ms < 0, dt_ms + ITOW_WEEK_MS, dt_ms)        # qua tuần GPS mới
+    dt_ms = np.where(dt_ms < 0, dt_ms + ITOW_WEEK_MS, dt_ms)
     t_s = np.concatenate([[0], np.cumsum(dt_ms)]) / 1000.0
     span_s = t_s[-1]
     freq = (n - 1) / span_s if span_s > 0 else float("nan")
     gaps = int(np.sum(dt_ms > GAP_MS))
     gap_pct = 100.0 * gaps / len(dt_ms)
 
-    # ---- Vị trí: hiệu số NGUYÊN so với vị trí trung bình rồi mới đổi sang mét ----
     lat0 = int_mean(d["lat_e7"])
     lon0 = int_mean(d["lon_e7"])
     coslat = math.cos(math.radians(lat0 * 1e-7))
@@ -106,7 +103,6 @@ def main():
     jumps_warn = int(np.sum(step > JUMP_WARN_M))
     jumps_fail = int(np.sum(step > JUMP_FAIL_M))
 
-    # ---- Trôi chậm: polyfit bậc 1 theo phút, std sau khi bỏ trôi ----
     t_min = t_s / 60.0
     pn = np.polyfit(t_min, north, 1)
     pe = np.polyfit(t_min, east, 1)
@@ -115,7 +111,6 @@ def main():
     east_dt = east - np.polyval(pe, t_min)
     std_h_detr = math.hypot(north_dt.std(ddof=1), east_dt.std(ddof=1))
 
-    # ---- Chỉ số riêng của NAV-PVT ----
     hacc = d["hAcc_mm"] / 1000.0
     vn = d["velN_mmps"] / 1000.0
     ve = d["velE_mmps"] / 1000.0
@@ -144,7 +139,6 @@ def main():
     print(f"  → gợi ý R vận tốc cho Kalman ≈ {((vn.var(ddof=1) + ve.var(ddof=1)) / 2):.4f} (m/s)²")
     print(f"sAcc trung bình: {sacc.mean():.3f} m/s")
 
-    # ---- Kết luận ----
     checks = [
         (f"std ngang < {args.max_std_m} m", std_h < args.max_std_m, f"{std_h:.3f} m"),
         (f"tần số >= {args.min_hz} Hz", freq >= args.min_hz, f"{freq:.2f} Hz"),
@@ -157,7 +151,6 @@ def main():
     all_ok = all(ok for _, ok, _ in checks)
     print(f"KẾT LUẬN: {'ĐẠT' if all_ok else 'KHÔNG ĐẠT'}")
 
-    # ---- Đồ thị ----
     import matplotlib
     if not args.show:
         matplotlib.use("Agg")

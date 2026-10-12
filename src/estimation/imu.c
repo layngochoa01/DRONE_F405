@@ -2,8 +2,6 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdbool.h>
-// #include "uart5.h"
-// static uint8_t imu_debug_counter = 0;
 
 static float vec3NormSq(const Vec3_t *v)
 {
@@ -58,6 +56,7 @@ static void imuComputeRotationMatrix(IMU_t *imu)
 
 static float imuComputeAccWeight(const IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel )
 {
+    (void)imu;
     float accMag = sqrtf(vec3NormSq(accel)) / GRAVITY_CMSS;
     float err    = fabsf(accMag - 1.0f);
     float w_near = (err < IMU_ACC_NEARNESS) ? (1.0f - err / IMU_ACC_NEARNESS) : 0.0f;
@@ -69,10 +68,6 @@ static float imuComputeAccWeight(const IMU_t *imu, const Vec3_t *gyro, const Vec
     return w_near * w_rate;
 }
 
-/* Lỗi heading từ magnetometer (body frame).
- * Giả sử từ trường vuông góc trọng lực: chiếu mag xuống mặt phẳng ngang (EF),
- * so với hướng Bắc tham chiếu (1,0,0) → lỗi chỉ có thành phần Z trong EF,
- * nên mag chỉ sửa yaw, không làm lệch roll/pitch. */
 static bool imuComputeMagError(const IMU_t *imu, const Vec3_t *mag, Vec3_t *vErr)
 {
     if (vec3NormSq(mag) < 1e-12f) return false;
@@ -83,7 +78,7 @@ static bool imuComputeMagError(const IMU_t *imu, const Vec3_t *mag, Vec3_t *vErr
     float hx = imu->rMat[0][0]*m.x + imu->rMat[0][1]*m.y + imu->rMat[0][2]*m.z;
     float hy = imu->rMat[1][0]*m.x + imu->rMat[1][1]*m.y + imu->rMat[1][2]*m.z;
     float bx = sqrtf(hx*hx + hy*hy);
-    if (bx < 1e-3f) return false;   /* mag gần thẳng đứng → không có thông tin heading */
+    if (bx < 1e-3f) return false;
 
     float ezEf = -(hy * bx);
 
@@ -116,7 +111,6 @@ static void imuMahonyUpdate(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel,
 
         Vec3_t vErr;
         vec3Cross(&vErr, &vAcc, &vEstGravity);
-        // vec3Cross(&vErr, &vEstGravity, &vAcc);
         float spinRateSq = vec3NormSq(gyro);
         float spinLimit  = (IMU_SPIN_RATE_LIMIT * M_PIf / 180.0f);
 
@@ -142,7 +136,7 @@ static void imuMahonyUpdate(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel,
     vRotation.y += imu->gyroDrift.y;
     vRotation.z += imu->gyroDrift.z;
 
-    Quaternion_IntegrateBodyRate(&imu->q, &vRotation, dT); 
+    Quaternion_IntegrateBodyRate(&imu->q, &vRotation, dT);
 
     imuComputeRotationMatrix(imu);
 }
@@ -158,28 +152,12 @@ static void imuUpdateEulerAngles(IMU_t *imu)
 
     if (imu->attitude.yaw < 0.0f)
         imu->attitude.yaw += 360.0f;
-    
-    // imu_debug_counter++;
 
-    // if (imu_debug_counter >= 10)
-    // {
-    //     imu_debug_counter = 0;
-
-    //     UART5_WriteF(
-    //         "R20=%.4f R21=%.4f R22=%.4f | "
-    //         "R=%.2f P=%.2f Y=%.2f\r\n",
-    //         imu->rMat[2][0],
-    //         imu->rMat[2][1],
-    //         imu->rMat[2][2],
-    //         imu->attitude.roll,
-    //         imu->attitude.pitch,
-    //         imu->attitude.yaw
-    //     );
-    // }
 }
 
 void IMU_Init(IMU_t *imu, float kp, float ki, float dT)
 {
+    (void)dT;
     imu->q = (Quaternion_t){ 1.0f, 0.0f, 0.0f, 0.0f };
 
     imu->gyroDrift = (Vec3_t){ 0.0f, 0.0f, 0.0f };

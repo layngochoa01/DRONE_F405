@@ -21,7 +21,6 @@ C_SRCS = \
 	src/drivers/I2C.c	\
 	src/drivers/timer.c \
 	src/drivers/flash_storage.c \
-	src/drivers/ibus.c \
 	src/drivers/sbus.c \
 	src/drivers/pwm_out.c \
 	src/drivers/usart1.c \

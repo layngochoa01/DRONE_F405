@@ -29,20 +29,6 @@ static volatile uint32_t s_lastByteTick = 0;
 
 static bool s_frameBad = false;
 
-// volatile uint8_t  g_sbusLastRaw = 0;
-// volatile uint32_t g_sbusRawCount = 0;
-
-// volatile uint32_t g_sbusBytes     = 0;
-// volatile uint32_t g_sbusFrames    = 0;
-// volatile uint32_t g_sbusGood      = 0;
-// volatile uint32_t g_sbusBadFooter = 0;
-// volatile uint32_t g_sbusBadUart   = 0;
-
-// volatile uint32_t g_sbusErrFE     = 0;
-// volatile uint32_t g_sbusErrNE     = 0;
-// volatile uint32_t g_sbusErrPE     = 0;
-// volatile uint32_t g_sbusErrORE    = 0;
-
 static uint32_t computeBRR(uint32_t pclk, uint32_t baud)
 {
     uint32_t usartdiv_x100 = (pclk * 25U) / (4U * baud);
@@ -54,28 +40,6 @@ static uint32_t computeBRR(uint32_t pclk, uint32_t baud)
         fraction = 0U;
     }
     return (mantissa << 4) | (fraction & 0x0FU);
-}
-
-static void sbus_decode(const uint8_t *b)
-{
-    uint32_t acc = 0;
-    uint32_t bits = 0;
-    uint32_t idx = 1;
-
-    for (uint32_t ch = 0; ch < SBUS_CHANNEL_COUNT; ch++)
-    {
-        while (bits < 11U)
-        {
-            acc |= ((uint32_t)b[idx++]) << bits;
-            bits += 8U;
-        }
-
-        s_channelsRaw[ch] =
-            (uint16_t)(acc & 0x07FFU);
-
-        acc >>= 11;
-        bits -= 11U;
-    }
 }
 
 void SBUS_Init(uint32_t apb1_clk)
@@ -115,9 +79,6 @@ void SBUS_ISR_Handler(void)
         return;
 
     uint8_t c = (uint8_t)USART2->DR;
-
-    // g_sbusRawCount++;
-    // g_sbusLastRaw = c;
 
     if (s_frameIndex == 0)
     {
@@ -164,18 +125,7 @@ void SBUS_ISR_Handler(void)
         s_hasValidFrame = true;
         s_frameReady = true;
 
-        // g_sbusFrames++;
-        // g_sbusGood++;
     }
-}
-
-bool SBUS_IsFrameReady(void)
-{
-    if (s_frameReady) {
-        s_frameReady = false;
-        return true;
-    }
-    return false;
 }
 
 bool SBUS_IsConnected(void)

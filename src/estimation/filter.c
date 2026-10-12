@@ -3,12 +3,6 @@
 
 #define M_PIf 3.14159265358979f
 
-static float computeAlpha(float f_cut, float dT)
-{
-    float RC = 1.0f / (2.0f * M_PIf * f_cut);
-    return dT / (RC + dT);
-}
-
 void pt1FilterInit(PT1Filter_t *f, float f_cut, float dT)
 {
     f->RC    = 1.0f / (2.0f * M_PIf * f_cut);
@@ -16,26 +10,14 @@ void pt1FilterInit(PT1Filter_t *f, float f_cut, float dT)
     f->state = 0.0f;
 }
 
-void pt1FilterUpdateCutoff(PT1Filter_t *f, float f_cut, float dT)
-{
-    f->RC    = 1.0f / (2.0f * M_PIf * f_cut);
-    f->alpha = dT / (f->RC + dT);
-}
-
 float pt1FilterApply(PT1Filter_t *f, float input)
 {
-    /* y[n] = y[n-1] + alpha * (x[n] - y[n-1]) */
     f->state = f->state + f->alpha * (input - f->state);
     return f->state;
 }
 
-void pt1FilterReset(PT1Filter_t *f, float value)
-{
-    f->state = value;
-}
-
 #define ACCEL_CUTOFF_HZ  20.0f
-#define GYRO_CUTOFF_HZ   100.0f   /* vòng 2 kHz: ít trễ hơn 30 Hz cũ */
+#define GYRO_CUTOFF_HZ   100.0f
 
 void IMU_FilterInit(IMUFilter_t *f, float dt)
 {

@@ -18,17 +18,16 @@ typedef struct {
     Attitude_t attitude;
 } IMU_t;
 
-#define IMU_KP_ACC          2.0f   /* Kp accelerometer  */
-#define IMU_KI_ACC          0.005f  /* Ki accelerometer  */
-#define IMU_KP_MAG          1.0f    /* Kp magnetometer (chỉ sửa heading) */
-#define IMU_SPIN_RATE_LIMIT 20.0f   /* deg/s - giới hạn tích phân I */
-#define IMU_ACC_NEARNESS    0.2f    /* 20% tolerance quanh 1G */
+#define IMU_KP_ACC          2.0f
+#define IMU_KI_ACC          0.005f
+#define IMU_KP_MAG          1.0f
+#define IMU_SPIN_RATE_LIMIT 20.0f
+#define IMU_ACC_NEARNESS    0.2f
 #define GRAVITY_CMSS        981.0f
 #define M_PIf               3.14159265358979f
 
 void IMU_Init(IMU_t *imu, float kp, float ki, float dT);
 
-/* gyro: rad/s, accel: cm/s^2, mag: đơn vị bất kỳ (sẽ được chuẩn hóa), NULL = không dùng mag */
 void IMU_Update(IMU_t *imu, const Vec3_t *gyro, const Vec3_t *accel, const Vec3_t *mag, float dT);
 
 const Attitude_t *IMU_GetAttitude(const IMU_t *imu);

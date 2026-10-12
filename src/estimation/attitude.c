@@ -17,7 +17,7 @@ void Attitude_Update(const ICM42605_Data *data, const Vec3_t *mag, float dT)
     };
 
     Vec3_t accel = {
-        data->accel_x * 100.0f,   
+        data->accel_x * 100.0f,
         data->accel_y * 100.0f,
         data->accel_z * 100.0f
     };
@@ -38,10 +38,4 @@ const Quaternion_t *Quaternion_Get(void)
 void Attitude_GetRotationMatrix(float rMat[3][3])
 {
     GetRotationMatrix(&s_imu, rMat);
-}
-
-/* Yaw (rad, [-pi, pi]), dương = quay trái (CCW nhìn từ trên), 0 = hướng Bắc nếu có mag */
-float Attitude_GetYawRad(void)
-{
-    return atan2f(s_imu.rMat[1][0], s_imu.rMat[0][0]);
 }

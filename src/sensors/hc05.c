@@ -23,38 +23,6 @@ void HC05_Init(uint32_t apb1_clk, uint32_t baudrate)
     UART5_WriteString("HC05_READY\r\n");
 }
 
-void HC05_SendIMU(const ICM42605_Data *data)
-{
-   UART5_WriteF("A:[%8.2f, %8.2f, %8.2f] | G:[%8.2f, %8.2f, %8.2f] | T:[%6.2f]\r\n", data->accel_x, data->accel_y, data->accel_z, data->gyro_x,  data->gyro_y,  data->gyro_z, data->temp);
-
-    // UART5_WriteF(" A:[%8.2f, %8.2f, %8.2f] \r\n", data->accel_x, data->accel_y, data->accel_z);
-    // UART5_WriteF(" G:[%8.2f, %8.2f, %8.2f] \r\n",data->gyro_x,  data->gyro_y,  data->gyro_z);
-    // UART5_WriteF(" T:[%6.2f]\r\n",data->temp);
-}
-
-void HC05_SendRawIMU(const ICM42605_RawData *raw){
-
-    UART5_WriteF(" A:[%6d, %6d, %6d] \r\n", raw->accel_x, raw->accel_y, raw->accel_z);
-    // UART5_WriteF(" G:[%6d, %6d, %6d] \r\n",raw->gyro_x,  raw->gyro_y,  raw->gyro_z);
-}
-
-void HC05_SendAttitude(float roll, float pitch, float yaw)
-{
-    UART5_WriteF("R:%6.2f P:%6.2f Y:%6.2f\r\n", roll, pitch, yaw);
-}
-
-void HC05_LogQuaternion(const Quaternion_t *q){
-    UART5_WriteF("Q: w=%.4f x=%.4f y=%.4f z=%.4f\r\n", q->q0, q->q1, q->q2, q->q3);
-}
-
-void HC05_LogAltitudeFKState(const AltitudeKF_State_t *kf){
-    // UART5_WriteF("KF Alt: %.3f m  Vel: %.3f m/s  Bias: %.4f m/s2\r\n", kf->altitude, kf->velocity, kf->accelBias);
-    // UART5_WriteF("KF Alt: %.3f Vel: %.3f \r\n", kf->altitude, kf->velocity);
-    UART5_WriteF("KF Alt: %.3f \r\n", kf->altitude);
-    UART5_WriteF("Vel: %.3f \r\n", kf->velocity);
-    // UART5_WriteF("Bias: %.4f \r\n", kf->accelBias);
-}
-
 HC05_StreamState HC05_Poll(void)
 {
     while (UART5_RxAvailable() > 0U) {
@@ -69,7 +37,6 @@ HC05_StreamState HC05_Poll(void)
             else if (strcmp(cmd_buf, "CALIBGYRO") == 0) { calib_cmd = HC05_CMD_CALIB_GYRO; UART5_WriteString("OK_CALIB_GYRO\r\n"); }
             else if (strcmp(cmd_buf, "CALIBACCEL") == 0) { calib_cmd = HC05_CMD_CALIB_ACCEL; UART5_WriteString("OK_CALIB_ACCEL\r\n"); }
             else if (strcmp(cmd_buf, "CALIBERASE") == 0) { calib_cmd = HC05_CMD_CALIB_ERASE; UART5_WriteString("OK_CALIB_ERASE\r\n"); }
-            else if (strcmp(cmd_buf, "PWMDBG") == 0) { calib_cmd = HC05_CMD_PWM_DEBUG; }
             else if (strcmp(cmd_buf, "BENCH") == 0)    { calib_cmd = HC05_CMD_BENCH_ON; }
             else if (strcmp(cmd_buf, "BENCHOFF") == 0) { calib_cmd = HC05_CMD_BENCH_OFF; }
             else if (strcmp(cmd_buf, "LOGMAG") == 0)    { calib_cmd = HC05_CMD_LOG_MAG; }
@@ -80,7 +47,7 @@ HC05_StreamState HC05_Poll(void)
             else if (strcmp(cmd_buf, "MAGCAL") == 0)    { calib_cmd = HC05_CMD_MAGCAL; }
             else if (strcmp(cmd_buf, "MAGCALEND") == 0) { calib_cmd = HC05_CMD_MAGCAL_END; }
             else if (strcmp(cmd_buf, "CALIBSHOW") == 0) { calib_cmd = HC05_CMD_CALIB_SHOW; }
-            else if (strcmp(cmd_buf, "CALIB") == 0) { calib_cmd = HC05_CMD_CALIB; UART5_WriteString("OK CALIB \r\n");} 
+            else if (strcmp(cmd_buf, "CALIB") == 0) { calib_cmd = HC05_CMD_CALIB; UART5_WriteString("OK CALIB \r\n");}
             else if (strcmp(cmd_buf, "M1")    == 0) { motor_cmd = HC05_MOTOR_1; }
             else if (strcmp(cmd_buf, "M2")    == 0) { motor_cmd = HC05_MOTOR_2; }
             else if (strcmp(cmd_buf, "M3")    == 0) { motor_cmd = HC05_MOTOR_3; }
@@ -94,14 +61,14 @@ HC05_StreamState HC05_Poll(void)
             else if (strcmp(cmd_buf, "LAND")   == 0) { flight_cmd = HC05_FLIGHT_CMD_LAND;   UART5_WriteString("OK_LAND\r\n"); }
             else if (cmd_len > 0U)                  { UART5_WriteString("ERR_CMD\r\n"); }
 
-            cmd_len = 0;  
+            cmd_len = 0;
             return stream_state;
         }
 
         if (cmd_len < CMD_BUF_SIZE - 1U) {
             cmd_buf[cmd_len++] = c;
         } else {
-            cmd_len = 0;  
+            cmd_len = 0;
         }
     }
 
@@ -116,7 +83,7 @@ HC05_StreamState HC05_GetStreamState(void)
 HC05_CalibCmd HC05_GetCalibCmd(void)
 {
     HC05_CalibCmd cmd = calib_cmd;
-    calib_cmd = HC05_CMD_NONE;   
+    calib_cmd = HC05_CMD_NONE;
     return cmd;
 }
 

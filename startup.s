@@ -1,11 +1,10 @@
-
     .syntax unified
     .cpu cortex-m4
     .thumb
 
     .extern UART5_IRQHandler
     .extern  DMA2_Stream0_IRQHandler
-    .extern  DMA2_Stream3_IRQHandler 
+    .extern  DMA2_Stream3_IRQHandler
     .extern TIM7_IRQHandler
     .extern USART2_IRQHandler
     .extern USART1_IRQHandler
@@ -30,88 +29,88 @@ _vector_table:
     .word   pendsv_handler
     .word   systick_handler
 
-    .word   0                   /* IRQ0:  WWDG               */
-    .word   0                   /* IRQ1:  PVD                */
-    .word   0                   /* IRQ2:  TAMP_STAMP         */
-    .word   0                   /* IRQ3:  RTC_WKUP           */
-    .word   0                   /* IRQ4:  FLASH              */
-    .word   0                   /* IRQ5:  RCC                */
-    .word   0                   /* IRQ6:  EXTI0              */
-    .word   0                   /* IRQ7:  EXTI1              */
-    .word   0                   /* IRQ8:  EXTI2              */
-    .word   0                   /* IRQ9:  EXTI3              */
-    .word   0                   /* IRQ10: EXTI4              */
-    .word   0                   /* IRQ11: DMA1_Stream0       */
-    .word   0                   /* IRQ12: DMA1_Stream1       */
-    .word   0                   /* IRQ13: DMA1_Stream2       */
-    .word   0                   /* IRQ14: DMA1_Stream3       */
-    .word   0                   /* IRQ15: DMA1_Stream4       */
-    .word   0                   /* IRQ16: DMA1_Stream5       */
-    .word   0                   /* IRQ17: DMA1_Stream6       */
-    .word   0                   /* IRQ18: ADC                */
-    .word   0                   /* IRQ19: CAN1_TX            */
-    .word   0                   /* IRQ20: CAN1_RX0           */
-    .word   0                   /* IRQ21: CAN1_RX1           */
-    .word   0                   /* IRQ22: CAN1_SCE           */
-    .word   0                   /* IRQ23: EXTI9_5            */
-    .word   0                   /* IRQ24: TIM1_BRK_TIM9      */
-    .word   0                   /* IRQ25: TIM1_UP_TIM10      */
-    .word   0                   /* IRQ26: TIM1_TRG_TIM11     */
-    .word   0                   /* IRQ27: TIM1_CC            */
-    .word   0                   /* IRQ28: TIM2 (PWM5/6, không ngắt) */
-    .word   0                   /* IRQ29: TIM3               */
-    .word   0                   /* IRQ30: TIM4               */
-    .word   0                   /* IRQ31: I2C1_EV            */
-    .word   0                   /* IRQ32: I2C1_ER            */
-    .word   0                   /* IRQ33: I2C2_EV            */
-    .word   0                   /* IRQ34: I2C2_ER            */
-    .word   0                   /* IRQ35: SPI1               */
-    .word   0                   /* IRQ36: SPI2               */
-    .word   USART1_IRQHandler   /* IRQ37: USART1             */
-    .word   USART2_IRQHandler   /* IRQ38: USART2             */
-    .word   0                   /* IRQ39: USART3             */
-    .word   0                   /* IRQ40: EXTI15_10          */
-    .word   0                   /* IRQ41: RTC_Alarm          */
-    .word   0                   /* IRQ42: OTG_FS_WKUP        */
-    .word   0                   /* IRQ43: TIM8_BRK_TIM12     */
-    .word   0                   /* IRQ44: TIM8_UP_TIM13      */
+    .word   0                   /* IRQ0: WWDG */
+    .word   0                   /* IRQ1: PVD */
+    .word   0                   /* IRQ2: TAMP_STAMP */
+    .word   0                   /* IRQ3: RTC_WKUP */
+    .word   0                   /* IRQ4: FLASH */
+    .word   0                   /* IRQ5: RCC */
+    .word   0                   /* IRQ6: EXTI0 */
+    .word   0                   /* IRQ7: EXTI1 */
+    .word   0                   /* IRQ8: EXTI2 */
+    .word   0                   /* IRQ9: EXTI3 */
+    .word   0                   /* IRQ10: EXTI4 */
+    .word   0                   /* IRQ11: DMA1_Stream0 */
+    .word   0                   /* IRQ12: DMA1_Stream1 */
+    .word   0                   /* IRQ13: DMA1_Stream2 */
+    .word   0                   /* IRQ14: DMA1_Stream3 */
+    .word   0                   /* IRQ15: DMA1_Stream4 */
+    .word   0                   /* IRQ16: DMA1_Stream5 */
+    .word   0                   /* IRQ17: DMA1_Stream6 */
+    .word   0                   /* IRQ18: ADC */
+    .word   0                   /* IRQ19: CAN1_TX */
+    .word   0                   /* IRQ20: CAN1_RX0 */
+    .word   0                   /* IRQ21: CAN1_RX1 */
+    .word   0                   /* IRQ22: CAN1_SCE */
+    .word   0                   /* IRQ23: EXTI9_5 */
+    .word   0                   /* IRQ24: TIM1_BRK_TIM9 */
+    .word   0                   /* IRQ25: TIM1_UP_TIM10 */
+    .word   0                   /* IRQ26: TIM1_TRG_TIM11 */
+    .word   0                   /* IRQ27: TIM1_CC */
+    .word   0                   /* IRQ28: TIM2 */
+    .word   0                   /* IRQ29: TIM3 */
+    .word   0                   /* IRQ30: TIM4 */
+    .word   0                   /* IRQ31: I2C1_EV */
+    .word   0                   /* IRQ32: I2C1_ER */
+    .word   0                   /* IRQ33: I2C2_EV */
+    .word   0                   /* IRQ34: I2C2_ER */
+    .word   0                   /* IRQ35: SPI1 */
+    .word   0                   /* IRQ36: SPI2 */
+    .word   USART1_IRQHandler   /* IRQ37: USART1 */
+    .word   USART2_IRQHandler   /* IRQ38: USART2 */
+    .word   0                   /* IRQ39: USART3 */
+    .word   0                   /* IRQ40: EXTI15_10 */
+    .word   0                   /* IRQ41: RTC_Alarm */
+    .word   0                   /* IRQ42: OTG_FS_WKUP */
+    .word   0                   /* IRQ43: TIM8_BRK_TIM12 */
+    .word   0                   /* IRQ44: TIM8_UP_TIM13 */
     .word   0                   /* IRQ45: TIM8_TRG_COM_TIM14 */
-    .word   0                   /* IRQ46: TIM8_CC            */
-    .word   0                   /* IRQ47: DMA1_Stream7       */
-    .word   0                   /* IRQ48: FMC                */
-    .word   0                   /* IRQ49: SDIO               */
-    .word   0                   /* IRQ50: TIM5               */
-    .word   0                   /* IRQ51: SPI3               */
-    .word   0                   /* IRQ52: UART4              */
-    .word   UART5_IRQHandler    /* IRQ53: UART5              */
-    .word   0                   /* IRQ54: TIM6_DAC           */
-    .word   TIM7_IRQHandler     /* IRQ55: TIM7 (kích đọc IMU) */
-    .word   DMA2_Stream0_IRQHandler                          /* IRQ56: DMA2_Stream0       */
-    .word   0                   /* IRQ57: DMA2_Stream1       */
-    .word   0                   /* IRQ58: DMA2_Stream2       */
-    .word   DMA2_Stream3_IRQHandler                          /* IRQ59: DMA2_Stream3       */
-    .word   0                   /* IRQ60: DMA2_Stream4       */
-    .word   0                   /* IRQ61: ETH                */
-    .word   0                   /* IRQ62: ETH_WKUP           */
-    .word   0                   /* IRQ63: CAN2_TX            */
-    .word   0                   /* IRQ64: CAN2_RX0           */
-    .word   0                   /* IRQ65: CAN2_RX1           */
-    .word   0                   /* IRQ66: CAN2_SCE           */
-    .word   0                   /* IRQ67: OTG_FS             */
-    .word   0                   /* IRQ68: DMA2_Stream5       */
-    .word   0                   /* IRQ69: DMA2_Stream6       */
-    .word   0                   /* IRQ70: DMA2_Stream7       */
-    .word   0                   /* IRQ71: USART6             */
-    .word   0                   /* IRQ72: I2C3_EV            */
-    .word   0                   /* IRQ73: I2C3_ER            */
-    .word   0                   /* IRQ74: OTG_HS_EP1_OUT     */
-    .word   0                   /* IRQ75: OTG_HS_EP1_IN      */
-    .word   0                   /* IRQ76: OTG_HS_WKUP        */
-    .word   0                   /* IRQ77: OTG_HS             */
-    .word   0                   /* IRQ78: DCMI               */
-    .word   0                   /* IRQ79: Reserved           */
-    .word   0                   /* IRQ80: HASH_RNG           */
-    .word   0                   /* IRQ81: FPU                */
+    .word   0                   /* IRQ46: TIM8_CC */
+    .word   0                   /* IRQ47: DMA1_Stream7 */
+    .word   0                   /* IRQ48: FMC */
+    .word   0                   /* IRQ49: SDIO */
+    .word   0                   /* IRQ50: TIM5 */
+    .word   0                   /* IRQ51: SPI3 */
+    .word   0                   /* IRQ52: UART4 */
+    .word   UART5_IRQHandler    /* IRQ53: UART5 */
+    .word   0                   /* IRQ54: TIM6_DAC */
+    .word   TIM7_IRQHandler     /* IRQ55: TIM7 */
+    .word   DMA2_Stream0_IRQHandler                          /* IRQ56: DMA2_Stream0 */
+    .word   0                   /* IRQ57: DMA2_Stream1 */
+    .word   0                   /* IRQ58: DMA2_Stream2 */
+    .word   DMA2_Stream3_IRQHandler                          /* IRQ59: DMA2_Stream3 */
+    .word   0                   /* IRQ60: DMA2_Stream4 */
+    .word   0                   /* IRQ61: ETH */
+    .word   0                   /* IRQ62: ETH_WKUP */
+    .word   0                   /* IRQ63: CAN2_TX */
+    .word   0                   /* IRQ64: CAN2_RX0 */
+    .word   0                   /* IRQ65: CAN2_RX1 */
+    .word   0                   /* IRQ66: CAN2_SCE */
+    .word   0                   /* IRQ67: OTG_FS */
+    .word   0                   /* IRQ68: DMA2_Stream5 */
+    .word   0                   /* IRQ69: DMA2_Stream6 */
+    .word   0                   /* IRQ70: DMA2_Stream7 */
+    .word   0                   /* IRQ71: USART6 */
+    .word   0                   /* IRQ72: I2C3_EV */
+    .word   0                   /* IRQ73: I2C3_ER */
+    .word   0                   /* IRQ74: OTG_HS_EP1_OUT */
+    .word   0                   /* IRQ75: OTG_HS_EP1_IN */
+    .word   0                   /* IRQ76: OTG_HS_WKUP */
+    .word   0                   /* IRQ77: OTG_HS */
+    .word   0                   /* IRQ78: DCMI */
+    .word   0                   /* IRQ79: Reserved */
+    .word   0                   /* IRQ80: HASH_RNG */
+    .word   0                   /* IRQ81: FPU */
 
     .section .text
     .align 2
@@ -122,10 +121,10 @@ _vector_table:
 reset_handler:
     ldr     r0, =0xE000ED88
     ldr     r1, [r0]
-    orr     r1, r1, #(0xF << 20)   /* CP10[21:20]=11, CP11[23:22]=11 */
+    orr     r1, r1, #(0xF << 20)
     str     r1, [r0]
-    dsb                             /* Data Sync Barrier */
-    isb                             /* Instruction Sync Barrier */
+    dsb
+    isb
     ldr     r0, =_data_lma
     ldr     r1, =_data_start
     ldr     r2, =_data_end
@@ -154,7 +153,6 @@ zero_bss_done:
 
 hang:
     b       hang
-
 
     .thumb_func
     .weak   nmi_handler

@@ -3,31 +3,30 @@
 #include <math.h>
 #include <stdbool.h>
 #define BIAS_FREEZE_VELOCITY_THRESHOLD 0.15f
-#define VELOCITY_DAMPING 0.998f   /* mỗi lần predict (100 Hz) */
-#define BARO_INNOVATION_GATE          3.0f// 0.5f 
+#define VELOCITY_DAMPING 0.998f
+#define BARO_INNOVATION_GATE          3.0f
 #define BARO_MA_WINDOW 4
 
-#define BARO_REJECT_RESET_COUNT  8      /* bị cổng 3σ loại liên tiếp ~1 s (8 Hz) → reset theo baro */
-#define BARO_HEALTH_TIMEOUT_MS   500U   /* quá lâu không có mẫu baro được nhận → không khỏe */
-#define GROUND_BIAS_ALPHA        0.02f  /* EMA bias khi neo dưới đất (gọi 100 Hz, τ ≈ 0.5 s) */
-#define GROUND_P_ALT_VEL         1e-3f  /* hiệp phương sai h, v khi đang neo */
+#define BARO_REJECT_RESET_COUNT  8
+#define BARO_HEALTH_TIMEOUT_MS   500U
+#define GROUND_BIAS_ALPHA        0.02f
+#define GROUND_P_ALT_VEL         1e-3f
 
-static float x[3]; 
+static float x[3];
 static float P[3][3];
-static float Q[3];  //noise
-static float R;     //measurement noise R
+static float Q[3];
+static float R;
 
 static float s_pressBuf[BARO_MA_WINDOW];
 static uint8_t s_pressIdx = 0;
 static bool s_pressBufFull = false;
 
-static AltitudeBaro_t s_baro;  
+static AltitudeBaro_t s_baro;
 
 static uint32_t s_lastAcceptMs = 0;
 static bool     s_everAccepted = false;
 static uint8_t  s_rejectCount  = 0;
 
-/* Đặt lại h, v về giá trị cho trước, xóa tương quan giữa (h, v) và các trạng thái khác */
 static void resetAltVel(float h, float pAltVel)
 {
     x[0] = h;
@@ -77,7 +76,6 @@ void Altitude_SetBaseline(float currentPressurePa)
 
 float Altitude_PressureToMeters(float pressurePa)
 {
-    // UART5_WriteF("PTM P: %.3f \n", s_baro.baselinePressure);
     return 44330.0f * (1.0f - powf(pressurePa / s_baro.baselinePressure, 1.0f / 5.255f));
 }
 
@@ -149,7 +147,6 @@ bool AltitudeKF_UpdateBaro(float baroAltitude, uint32_t nowMs)
 
     float innovationLimit = BARO_INNOVATION_GATE * sqrtf(S);
     if (fabsf(y) > innovationLimit) {
-        /* Loại mẫu bất thường; bị loại liên tục ~1 s thì tin baro, đặt lại ước lượng */
         if (++s_rejectCount < BARO_REJECT_RESET_COUNT) return false;
         resetAltVel(baroAltitude, 1.0f);
         s_rejectCount  = 0;
@@ -162,12 +159,10 @@ bool AltitudeKF_UpdateBaro(float baroAltitude, uint32_t nowMs)
     K[0] = P[0][0] / S;
     K[1] = P[1][0] / S;
     K[2] = (fabsf(x[1]) < BIAS_FREEZE_VELOCITY_THRESHOLD) ? (P[2][0] / S) : 0.0f;
-   
+
     x[0] += K[0] * y;
     x[1] += K[1] * y;
     x[2] += K[2] * y;
-
-    // UART5_WriteF( "BARO: %.3f | ALT: %.3f | VEL: %.3f | K1: %.5f\r\n", baroAltitude, x[0], x[1], K[1] );
 
     float newP[3][3];
     for (int i = 0; i < 3; i++) {
@@ -199,7 +194,6 @@ bool AltitudeKF_IsHealthy(uint32_t nowMs)
 
 void AltitudeKF_GroundAnchor(float verticalAccel_ms2)
 {
-    /* Dưới đất đứng yên: gia tốc đứng (đã trừ g) chính là bias */
     x[2] += GROUND_BIAS_ALPHA * (verticalAccel_ms2 - x[2]);
     resetAltVel(0.0f, GROUND_P_ALT_VEL);
 }
@@ -216,11 +210,6 @@ const AltitudeKF_State_t *AltitudeKF_Get(void)
     out.velocity  = x[1];
     out.accelBias = x[2];
     return &out;
-}
-
-float GetBaseLinePress()
-{
-    return s_baro.baselinePressure;
 }
 
 float Baro_MovingAverage(float newPressure)

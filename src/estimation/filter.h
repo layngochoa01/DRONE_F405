@@ -3,18 +3,14 @@
 #include "../sensors/icm42605.h"
 
 typedef struct {
-    float state;  
-    float alpha;   
-    float RC;      
+    float state;
+    float alpha;
+    float RC;
 } PT1Filter_t;
 
 void  pt1FilterInit(PT1Filter_t *f, float f_cut, float dT);
 
-void  pt1FilterUpdateCutoff(PT1Filter_t *f, float f_cut, float dT);
-
 float pt1FilterApply(PT1Filter_t *f, float input);
-
-void  pt1FilterReset(PT1Filter_t *f, float value);
 
 typedef struct
 {

@@ -1,140 +1,196 @@
 # BlueberryF405 Flight Controller
 
-Firmware bare-metal cho quadcopter chạy trên mạch điều khiển bay **STM32F405**.
-Định nghĩa thanh ghi nằm trong [include/register.h](include/register.h).
+Firmware bay tự viết từ đầu cho quadcopter dùng mạch **STM32F405** (Cortex-M4F, 168 MHz).
+Toàn bộ code làm việc trực tiếp với thanh ghi (không HAL, không CMSIS, không RTOS): driver ngoại vi, bộ ước lượng tư thế/độ cao/vị trí, các vòng điều khiển lồng nhau và máy trạng thái chế độ bay.
 
-## Tính năng
+> **Trạng thái:** đã kiểm tra trên bàn (tháo cánh), **chưa bay thử**. Chi tiết ở mục [Trạng thái và hạn chế](#trạng-thái-và-hạn-chế).
 
-![alt text](image/image.png)
+## Điểm nổi bật
 
-## Phần cứng / sơ đồ chân
+- **Vòng điều khiển nhanh 2 kHz chạy trong ngắt DMA:** đọc IMU, AHRS, điều khiển tư thế, rate PID, mixer, PWM. Việc đọc I2C, parse GPS và in log nằm ở vòng chậm trong main loop nên không làm lỡ nhịp.
+- **Điều khiển nhiều vòng lồng nhau:** vòng độ cao 25 Hz, vòng vị trí XY 10 Hz, vòng yaw 25 Hz tạo quaternion mục tiêu, sau đó là vòng tư thế và rate PID.
+- **Ước lượng:**
+  - Tư thế bằng bộ lọc bù Mahony trên quaternion (gyro + accel, mag chỉ sửa yaw).
+  - Độ cao bằng Kalman 3 trạng thái (độ cao, vận tốc, bias accel) kết hợp baro SPL06, có cổng loại mẫu bất thường (3σ), tự reset khi baro bị loại liên tục và neo về 0 khi ở dưới đất.
+  - Vị trí/vận tốc ngang bằng bộ lọc bù GPS + gia tốc IMU.
+- **GPS đọc giao thức UBX (NAV-PVT)** bằng máy trạng thái từng byte, có kiểm tra checksum và đồng bộ lại khi lỗi. Parser có test đơn vị chạy trên PC.
+- **Máy trạng thái chế độ bay** điều khiển bằng tay cầm SBUS: bay lên, giữ độ cao, giữ vị trí, bay tới/sang trái 5 s, hạ cánh, cùng failsafe mất RC và mất baro (hạ cánh mù).
+- **Lưu calib vào Flash** dạng ghi nối tiếp (512 slot, CRC32, đọc lại kiểm tra sau khi ghi), không ghi đè lên vùng chưa xoá.
+- **Công cụ kiểm thử trên bàn qua Bluetooth:** motor test từng chân, chế độ BENCH, đo tải vòng nhanh, log GPS ra CSV.
 
-| Chức năng          | Ngoại vi   | Chân |
-|--------------------|------------|------|
-| IMU ICM-42605      | SPI1       | SCK PA5, MISO PB4, MOSI PA7, CS PC14 |
-| Baro SPL06 (0x76), la bàn HMC5883L (0x1E) | I2C1 | SCL PB8, SDA PB7 |
-| Bluetooth HC-05    | UART5      | TX PC12, RX PD2 |
-| Bộ thu SBUS        | USART2     | RX PA3 |
-| GPS                | USART1     | RX PA10 |
-| Động cơ 1–4 (PWM)  | TIM8 CH4, TIM8 CH3, TIM1 CH3N, TIM1 CH1 | PC9, PC8, PB15, PA8 |
-| LED (tích cực mức thấp) | GPIOA | Đỏ PA13, Xanh dương PA14 |
+## Phần cứng
 
-Xung nhịp: SYSCLK 168 MHz lấy từ HSI + PLL, APB1 = 42 MHz, APB2 = 84 MHz, SysTick 1 ms.
+| Chức năng | Ngoại vi | Chân |
+|---|---|---|
+| IMU ICM-42605 | SPI1 + DMA | SCK PA5, MISO PB4, MOSI PA7, CS PC14 |
+| Baro SPL06 (0x76), la bàn HMC5883L (0x1E) hoặc QMC5883L (0x0D), tự nhận | I2C1 | SCL PB8, SDA PB7 |
+| Bluetooth HC-05 | UART5, 115200 | TX PC12, RX PD2 |
+| Bộ thu SBUS | USART2, 100 kbaud 8E2 | RX PA3 |
+| GPS u-blox | USART1, 115200 | RX PA10 |
+| Động cơ M1 / M2 | TIM1 CH3N / CH1 | PB15 / PA8 |
+| Động cơ M3 / M4 | TIM2 CH4 / CH3 | PB11 / PB10 |
+| LED (tích cực mức thấp) | GPIOA | Đỏ PA13, xanh dương PA14 |
 
-> PA13/PA14 cũng là chân SWD (SWDIO/SWCLK). Vì firmware dùng hai chân này cho LED, khi nạp lại có thể phải kết nối ở chế độ "connect under reset" (hoặc dùng DFU).
+Xung nhịp: SYSCLK 168 MHz (HSI 16 MHz, PLL M=16, N=336, P=2), APB1 42 MHz, APB2 84 MHz. TIM7 kích đọc IMU ở 2 kHz, TIM5 đếm 5 s cho các chế độ di chuyển, SysTick 1 ms.
 
-## Build
+Bố trí động cơ (nhìn từ trên xuống, quad X):
 
-Cần cài:
+```
+       M4 CW (S6)      M1 CCW (S3)
+              \   ^   /
+               \  |  /
+                [ FC ]
+               /      \
+              /        \
+       M3 CCW (S5)     M2 CW (S4)
+```
 
-- Toolchain `arm-none-eabi-gcc` (gcc, objcopy, size, gdb)
-- `make`
-- `openocd` kèm ST-Link, **hoặc** `dfu-util` để nạp qua USB DFU
+> PA13/PA14 cũng là chân SWD. Vì firmware dùng hai chân này cho LED, có thể phải nạp ở chế độ "connect under reset" hoặc dùng DFU.
+
+## Kiến trúc điều khiển
+
+```mermaid
+flowchart LR
+    RC["Tay cầm RC<br/>SBUS"] --> ST["Máy trạng thái<br/>chế độ bay"]
+    ST --> ALT["Vòng độ cao Z<br/>25 Hz"]
+    ST --> XY["Vòng vị trí XY<br/>10 Hz"]
+    ST --> YAW["Vòng yaw<br/>25 Hz"]
+    XY --> QS["Quaternion<br/>mục tiêu"]
+    YAW --> QS
+    QS --> ATT["Điều khiển tư thế<br/>2 kHz"]
+    ATT --> RATE["Rate PID<br/>2 kHz"]
+    ALT -->|ga| MIX["Mixer quad X"]
+    RATE -->|3 mô-men| MIX
+    MIX --> PWM["PWM 400 Hz<br/>4 ESC"]
+    IMU["IMU 2 kHz"] --> AHRS["AHRS<br/>quaternion"]
+    AHRS --> ATT
+    IMU -->|gyro| RATE
+    BARO["Baro 8 Hz"] --> KF["Kalman độ cao"]
+    IMU --> KF
+    KF --> ALT
+    GPS["GPS UBX 10 Hz"] --> POS["Ước lượng vị trí"]
+    IMU --> POS
+    POS --> XY
+```
+
+| Vòng | Nhịp | Nơi chạy |
+|---|---|---|
+| IMU, AHRS, điều khiển tư thế, rate PID, mixer, PWM | 2 kHz | Ngắt DMA đọc IMU |
+| Predict Kalman độ cao và ước lượng vị trí | khoảng 100 Hz (trung bình 20 mẫu gia tốc) | Main loop |
+| Baro, máy trạng thái, vòng độ cao, vòng yaw, compass | 25 Hz | Main loop |
+| Vòng vị trí XY | 10 Hz | Main loop |
+| Update ước lượng vị trí | khi có gói GPS mới | Main loop |
+
+Quy ước hệ trục thân drone: X hướng trước, Y hướng trái, Z hướng lên (FLU), roll dương là nghiêng phải, pitch dương là chúc mũi, yaw dương là quay trái. Hệ trái đất: X hướng Bắc, Y hướng Tây, Z hướng lên.
+
+## Chế độ bay
+
+Chọn bằng bốn kênh đầu của tay cầm SBUS (CH1 roll, CH2 pitch, CH3 ga, CH4 yaw). Mức cần: thấp dưới 1200 µs, giữa 1300–1700 µs, cao trên 1800 µs.
+
+| Chế độ | Cách vào | Hành vi |
+|---|---|---|
+| ARM | Ga thấp + yaw phải, giữ 1 s | Từ DISARMED sang IDLE, động cơ đứng yên |
+| DISARM | Ga thấp + yaw trái, giữ 0.5 s | Tắt động cơ |
+| CLIMB | Ga cao | Tăng độ cao mục tiêu 1 m, xong về chế độ hold trước đó |
+| ALT_HOLD | Ga giữa + kéo pitch về, giữ 0.5 s | Giữ độ cao bằng baro + IMU, không cần GPS |
+| POS_HOLD | Ga giữa + roll phải, giữ 0.5 s | Giữ độ cao và vị trí, cần GPS và compass |
+| FORWARD / LEFT | Ga giữa + pitch tới / roll trái, giữ 0.5 s | Bay 1 m/s theo hướng mũi trong 5 s (TIM5) rồi về POS_HOLD, độ cao không đổi |
+| LAND | Ga thấp | Hạ tối đa 0.5 m/s, chạm đất về IDLE |
+| LAND_BLIND | Tự động khi mất ước lượng độ cao lúc đang bay | Ga giảm dần về 0.30 trong 10 s, chỉ nhận cử chỉ DISARM |
+
+Mất tín hiệu SBUS hoặc receiver báo failsafe thì DISARM ngay. POS_HOLD, FORWARD, LEFT bị từ chối nếu thiếu GPS hoặc compass, và mất GPS giữa chừng thì tự về ALT_HOLD.
+
+## Build và nạp
+
+Cần `arm-none-eabi-gcc`, `make`, và `openocd` (ST-Link) hoặc `dfu-util` (USB DFU).
 
 ```sh
 make            # tạo blueberryf405.elf / .hex / .bin
+make flash      # OpenOCD + ST-Link
+make dfu        # USB DFU (giữ nút BOOT khi cắm cáp)
+make debug      # OpenOCD + arm-none-eabi-gdb
+make dump       # disassembly xen kẽ mã nguồn
 make clean
 ```
 
-File object nằm trong `build/`. Mức dùng bộ nhớ được in ra sau khi link.
-
-## Nạp firmware & debug
-
-```sh
-make flash      # OpenOCD + ST-Link: nạp, kiểm tra (verify), reset
-make dfu        # USB DFU (giữ nút BOOT khi cắm cáp)
-make debug      # chạy OpenOCD và gắn arm-none-eabi-gdb vào cổng :3333
-make dump       # disassembly xen kẽ với mã nguồn
-make map        # tóm tắt các section từ file map của linker
-```
-
-## Trình tự khởi động
-
-1. Cấu hình clock, SysTick, LED, sau đó khởi tạo ICM-42605.
-   - **LED đỏ nháy 3 lần**: IMU OK.
-   - **LED xanh nháy mãi**: khởi tạo IMU thất bại.
-2. Khởi động HC-05 (UART5) và SBUS (USART2).
-3. Firmware chờ khoảng 15 s, khởi tạo SPL06, chờ thêm khoảng 8 s, rồi lấy trung bình 50 mẫu áp suất làm mốc mặt đất (baseline).
-4. Đọc thông số calib IMU từ Flash. Nếu chưa có thì dùng offset bằng 0 và in ra `No calib data, using defaults`.
-5. Khởi tạo bộ lọc Kalman độ cao, chạy TIM7 ở 2 kHz (kích đọc IMU), rồi bắt đầu vòng lặp chính.
-
-## Vòng lặp: nhanh 2 kHz trong ngắt, chậm trong main loop
-
-**Vòng nhanh (2 kHz, trong ngắt DMA, `FlightControl_FastUpdate`):** TIM7 kích đọc IMU mỗi 0.5 ms (ICM-42605 chạy ODR 4 kHz). Đọc xong, ngắt DMA chạy cả chuỗi:
-
-```
-ICM42605 → remap trục → trừ calib → lọc PT1 (accel 20 Hz, gyro 100 Hz)
-        → AHRS (quaternion) → cộng dồn gia tốc hệ trái đất
-        → quaternion mục tiêu → điều khiển tư thế → rate PID (lọc D 80 Hz)
-        → mixer → PWM
-```
-
-**Vòng chậm (main loop, `FlightControl_SlowUpdate`):**
-
-| Nhịp | Công việc |
-|---|---|
-| ~100 Hz | Trung bình 20 mẫu gia tốc → predict Kalman độ cao và ước lượng vị trí (dT = thời gian thực) |
-| 25 Hz | Baro → update Kalman; máy trạng thái; vòng độ cao → ga; vòng yaw |
-| 25 Hz | Compass (lệch pha 20 ms với baro) |
-| 10 Hz | Vòng vị trí XY → roll, pitch |
-| khi có | GPS → update ước lượng vị trí |
-
-Vì đọc I2C và in log Bluetooth chỉ nằm ở vòng chậm, chúng không làm lỡ nhịp 2 kHz. Gửi `LOGPERF` để xem thời gian xử lý vòng nhanh, chu kỳ thực và số lần lỡ đọc IMU.
-
-**Ước lượng độ cao:**
-- Khi DISARMED hoặc IDLE, Kalman neo h = 0, v = 0, học bias accel, và kéo dần áp suất gốc theo thời tiết.
-- Baro bị loại liên tục khoảng 1 s thì reset theo baro.
-- Quá 500 ms không có mẫu baro hợp lệ thì `AltitudeKF_IsHealthy()` = false. Khi đó đang bay sẽ chuyển sang **LAND_BLIND**: ga giảm dần về 0.30 trong 10 s, chỉ nhận cử chỉ DISARM; baro tốt lại thì về ALT_HOLD. Đang ở dưới đất thì không cho CLIMB.
+Nạp qua DFU thì **rút GPS ra trước**: bootloader ROM của STM32 cũng nghe USART1, dữ liệu từ GPS làm nó bỏ chế độ USB DFU.
 
 ## Lệnh Bluetooth (HC-05, 115200 baud)
 
-Mỗi lệnh là một dòng text kết thúc bằng `\n`. Board trả lời cho từng lệnh.
+Mỗi lệnh là một dòng text kết thúc bằng `\n`. Firmware khởi động mất khoảng 30 s (chờ cảm biến ổn định, lấy mốc áp suất) và chưa trả lời lệnh trong thời gian đó.
 
-| Lệnh         | Phản hồi          | Tác dụng |
-|--------------|-------------------|----------|
-| `PING`       | `PONG`            | Kiểm tra kết nối |
-| `START` / `STOP` | `OK_START` / `OK_STOP` | Bật/tắt stream telemetry |
-| `CALIB`      | `OK CALIB`        | Calib gyro rồi calib accel |
-| `CALIBGYRO`  | `OK_CALIB_GYRO`   | Calib gyro. Giữ board **đứng yên**. Lưu vào Flash |
-| `CALIBACCEL` | `OK_CALIB_ACCEL`  | Calib accel. Đặt board **nằm phẳng, đứng yên**. Lưu vào Flash |
-| `CALIBERASE` | `OK_CALIB_ERASE`  | Xóa dữ liệu calib đã lưu |
-| `ARM` / `DISARM` / `HOLD` / `CLIMB` / `LAND` | `OK_<LỆNH>` | Lệnh bay (đã parse, xem phần trạng thái bên dưới) |
+| Nhóm | Lệnh | Tác dụng |
+|---|---|---|
+| Chung | `PING` | Trả về `PONG` |
+| | `START` / `STOP` | Bật/tắt stream log |
+| Calib (chỉ khi DISARMED) | `CALIB`, `CALIBGYRO`, `CALIBACCEL` | Calib gyro/accel, lưu vào Flash. Để drone nằm yên |
+| | `CALIBSHOW`, `CALIBERASE` | Xem / xoá calib đã lưu |
+| Thử trên bàn (**tháo cánh**) | `M1`…`M4`, `MALL`, `MSTOP` | Quay từng động cơ ở 1200 µs trong 3 s |
+| | `BENCH`, `BENCHOFF` | ARM qua Bluetooth, ga cố định 35%, vòng tư thế và rate chạy thật, in giá trị µs của 4 động cơ. Tự tắt sau 120 s |
+| Log | `LOGNORM`, `LOGPERF`, `LOGMAG`, `LOGGPS` | Đổi kiểu log. `LOGPERF` in thời gian xử lý vòng nhanh và số lần lỡ đọc IMU |
+| | `GPSCSV` | Log GPS thô dạng CSV cho `tools/gps_logger.py` |
+| Compass | `MAGCAL`, `MAGCALEND` | Calib hard-iron bằng cách xoay drone mọi hướng |
 
-Lệnh không hợp lệ sẽ nhận `ERR_CMD`. LED xanh sáng trong suốt quá trình calib.
+`ARM`, `HOLD`, `CLIMB`, `LAND` được parse nhưng chưa dùng, vì chế độ bay lấy từ SBUS. `DISARM` dùng để tắt chế độ BENCH.
 
-> Comment trong `hc05.h` ghi `CALIB_GYRO`... có dấu gạch dưới. Nhưng bộ parse trong `hc05.c` thực tế nhận lệnh **không có** gạch dưới như bảng trên.
+## Công cụ và kiểm thử
+
+```sh
+python3 tools/gps_logger.py            # ghi 2000 mẫu GPS hợp lệ qua /dev/rfcomm0 vào tools/LOG
+python3 tools/analyze_gps.py           # phân tích file mới nhất: std, CEP50, R95, trôi, nhiễu vận tốc
+make -C tools/ubx_test test            # test đơn vị parser UBX trên PC (gcc)
+```
+
+Parser UBX trên PC được biên dịch từ chính `src/sensors/gps.c`, kiểm tra các trường hợp: gói tốt, sai checksum, gói bị cắt giữa chừng, gói lạ dài 300 byte, `fixType` 5 (chỉ có thời gian), và NAV-PVT sai độ dài.
+
+### Kết quả đo GPS khi đứng yên
+
+Một lần đo ngoài trời, 2000 mẫu hợp lệ (fix 3D, từ 6 vệ tinh, hAcc không quá 3 m), module u-blox 10 Hz:
+
+| Chỉ số | Giá trị |
+|---|---|
+| Tần số thực | 10.00 Hz, không hụt mẫu |
+| Độ lệch chuẩn ngang | 0.181 m |
+| CEP50 / R95 | 0.142 m / 0.309 m |
+| Nhảy giữa hai mẫu lớn hơn 2 m | 0 lần |
+| Trôi chậm | 0.18 m/phút |
+| Nhiễu vận tốc khi đứng yên (N / E) | ±0.084 / ±0.121 m/s |
+| hAcc chip tự báo | trung bình 0.92 m |
+
+![Vị trí GPS quanh điểm trung bình](docs/gps_test/static_test_position.png)
+![Vận tốc GPS khi đứng yên](docs/gps_test/static_test_velocity.png)
+
+Đây là một lần đo ở một vị trí, kéo dài khoảng 200 s. Dữ liệu thô nằm ở [docs/gps_test/](docs/gps_test/).
 
 ## Cấu trúc thư mục
 
 ```
-include/            register.h (bản đồ thanh ghi MCU), types.h (Vec3_t ...)
-src/main.c          khởi tạo, trình tự boot, vòng lặp chính, các hàm ngắt
-src/drivers/        spi, I2C, uart5, usart1, timer, pwm_out, sbus, ibus, flash_storage
-src/sensors/        icm42605, spl06, hmc5883l, gps, hc05
-src/estimation/     quaternion, imu (bộ lọc tư thế), attitude, filter (PT1), altitude (KF)
-src/control/        pid, attitude_control, rate_control, motor_mixer, flight_state, altitude_control
-startup.s           bảng vector, reset handler (khởi tạo .data/.bss, bật FPU)
-stm32_flash.ld      Flash 1 MB @ 0x08000000, RAM 128 KB, stack 4 KB ở đỉnh RAM
+include/            register.h (bản đồ thanh ghi MCU), types.h, system.h
+src/main.c          khởi tạo, trình tự boot, ngắt, xử lý lệnh Bluetooth
+src/drivers/        spi, I2C, uart5, usart1, timer, pwm_out, sbus, flash_storage
+src/sensors/        icm42605, spl06, hmc5883l (HMC/QMC5883L), gps (UBX), hc05
+src/estimation/     quaternion, imu (AHRS), attitude, filter, altitude (Kalman), position
+src/control/        flight_control (điều phối các vòng), flight_state, altitude_control,
+                    position_control, yaw_control, attitude_control, rate_control, pid, motor_mixer
+startup.s           bảng vector, reset handler
+stm32_flash.ld      Flash 1 MB, RAM 128 KB
+tools/              gps_logger.py, analyze_gps.py, ubx_test/ (test parser UBX)
+docs/gps_test/      dữ liệu và hình của lần đo GPS
 ```
 
-Khi thêm file nguồn mới, khai báo nó trong `C_SRCS` của [Makefile](Makefile). Nếu file nằm ở thư mục mới, thêm cả thư mục đó vào `C_INCLUDES`.
+Khi thêm file nguồn mới, khai báo nó trong `C_SRCS` của [Makefile](Makefile).
 
-## Thông số tinh chỉnh
+## Trạng thái và hạn chế
 
-- Bộ lọc tư thế: `IMU_KP_ACC`, `IMU_KI_ACC` trong [src/estimation/imu.h](src/estimation/imu.h)
-- Hệ số P tư thế: tham số truyền vào `AttitudeControl_Update(...)` trong [src/main.c](src/main.c) (hiện tại 5 / 5 / 3)
-- Nhiễu của KF độ cao: `NOISE_ALT`, `NOISE_VEL`, `NOISE_BIAS`, `NOISE_BARO` trong [src/main.c](src/main.c)
-- Bộ điều khiển độ cao: các hằng `ALT_*` trong [src/control/altitude_control.h](src/control/altitude_control.h)
-- PWM động cơ: `MOTOR_PWM_HZ`, `MOTOR_MIN_US`, `MOTOR_MAX_US` trong [src/drivers/pwm_out.h](src/drivers/pwm_out.h)
+**Đã kiểm tra trên bàn (tháo cánh):** đọc IMU và xác định trục, calib gyro/accel và lưu/nạp lại từ Flash, xuất PWM cho 4 động cơ, thử mixer bằng chế độ BENCH, đọc GPS UBX ngoài trời (kết quả ở trên).
 
-## Trạng thái / đang phát triển
+**Chưa làm hoặc chưa kiểm chứng:**
 
-Firmware vẫn đang được phát triển và **chưa bay được**:
+- **Chưa bay thử.** Các chế độ bay, vòng độ cao và vòng vị trí mới được viết và mô phỏng logic, chưa chạy trên drone đang bay.
+- **Hệ số PID và hệ số các vòng ngoài chưa được tinh chỉnh.**
+- **Trục compass chưa được remap về hệ thân drone.** Đang dùng trục của chip, nên yaw hiệu chỉnh bằng compass chưa được kiểm chứng.
+- **Chưa ghi lại số đo tải CPU của vòng 2 kHz.** Lệnh `LOGPERF` có sẵn để đo.
+- Ước lượng vị trí chưa bù độ lệch từ (declination) và chưa ước lượng bias gia tốc ngang.
+- ESC đang nhận PWM 400 Hz, nên động cơ chỉ cập nhật lệnh 400 lần mỗi giây dù vòng điều khiển chạy 2 kHz.
 
-- Ngõ ra của bộ điều khiển tốc độ góc đã được tính, nhưng chưa đưa vào `MotorMixer` / `pwm_out`, nên động cơ chưa được điều khiển.
-- Các kênh SBUS đã được đọc trong vòng lặp chính nhưng chưa dùng làm setpoint. Setpoint tư thế đang cố định ở trạng thái nằm ngang.
-- `AltitudeKF_UpdateBaro` (bước hiệu chỉnh bằng baro) chưa được gọi trong vòng lặp chính. Hiện chỉ có bước dự đoán chạy.
-- `altitude_control.c` đã có nhưng chưa được thêm vào `C_SRCS` trong Makefile.
-- Các module GPS, la bàn và flight-state đã được biên dịch nhưng chưa được gọi từ `main`.
-
-**An toàn:** luôn tháo cánh quạt mỗi khi thử ngõ ra động cơ.
+**An toàn:** luôn tháo cánh quạt khi thử động cơ hoặc chế độ BENCH.

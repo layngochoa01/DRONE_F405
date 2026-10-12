@@ -14,7 +14,6 @@
 #include <stdbool.h>
 #include "gps.h"
 
-/* ---------- Stub phần cứng mà gps.c cần ---------- */
 static const uint8_t *s_feed;
 static size_t s_feedLen, s_feedPos;
 static uint32_t s_tick;
@@ -31,11 +30,9 @@ static void feed(const uint8_t *buf, size_t len)
     GPS_Process();
 }
 
-/* ---------- Dựng gói ---------- */
 static void w4(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24; }
 static void w2(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
 
-/* Ghi khung UBX vào out, trả về số byte */
 static size_t ubxFrame(uint8_t *out, uint8_t cls, uint8_t id, const uint8_t *pl, uint16_t len)
 {
     out[0] = 0xB5; out[1] = 0x62; out[2] = cls; out[3] = id; out[4] = len & 0xFF; out[5] = len >> 8;
@@ -70,26 +67,24 @@ static const Pvt k_pvt = {
     .sAcc = 180, .pDOP = 135,
 };
 
-/* Ghi chuỗi test: PVT tốt, gói NAV khác (bỏ qua), gói dài 300 byte (bỏ qua), rác,
- * PVT sai checksum, PVT bị cắt giữa chừng, PVT tốt. Trả về số byte. */
 static size_t buildSequence(uint8_t *buf)
 {
     size_t n = 0;
     uint8_t pl[300];
     Pvt v = k_pvt;
 
-    pvtPayload(pl, &v);                      n += ubxFrame(buf + n, 0x01, 0x07, pl, 92);   /* 1. tốt */
-    memset(pl, 0x55, 16);                    n += ubxFrame(buf + n, 0x01, 0x03, pl, 16);   /* NAV-STATUS */
-    memset(pl, 0xB5, 300);                   n += ubxFrame(buf + n, 0x0A, 0x09, pl, 300);  /* gói dài, payload chứa B5 */
+    pvtPayload(pl, &v);                      n += ubxFrame(buf + n, 0x01, 0x07, pl, 92);
+    memset(pl, 0x55, 16);                    n += ubxFrame(buf + n, 0x01, 0x03, pl, 16);
+    memset(pl, 0xB5, 300);                   n += ubxFrame(buf + n, 0x0A, 0x09, pl, 300);
     const uint8_t junk[] = { 0x00, 0xB5, 0x13, 0x24, 0x0D, 0x0A };
-    memcpy(buf + n, junk, sizeof junk);      n += sizeof junk;                              /* rác */
+    memcpy(buf + n, junk, sizeof junk);      n += sizeof junk;
     v.iTOW += 100; pvtPayload(pl, &v);
-    size_t f = ubxFrame(buf + n, 0x01, 0x07, pl, 92); buf[n + f - 1] ^= 0x01; n += f;       /* 2. sai checksum */
+    size_t f = ubxFrame(buf + n, 0x01, 0x07, pl, 92); buf[n + f - 1] ^= 0x01; n += f;
     v.iTOW += 100; pvtPayload(pl, &v);
-    f = ubxFrame(buf + n, 0x01, 0x07, pl, 92); n += 40;                                     /* 3. bị cắt sau 40 byte */
+    f = ubxFrame(buf + n, 0x01, 0x07, pl, 92); n += 40;
     (void)f;
-    v.iTOW += 100; v.fixType = 5; pvtPayload(pl, &v); n += ubxFrame(buf + n, 0x01, 0x07, pl, 92);  /* 4. bị nuốt bởi gói cụt */
-    v.iTOW += 100; v.fixType = 3; v.lat += 10; pvtPayload(pl, &v); n += ubxFrame(buf + n, 0x01, 0x07, pl, 92);  /* 5. tốt */
+    v.iTOW += 100; v.fixType = 5; pvtPayload(pl, &v); n += ubxFrame(buf + n, 0x01, 0x07, pl, 92);
+    v.iTOW += 100; v.fixType = 3; v.lat += 10; pvtPayload(pl, &v); n += ubxFrame(buf + n, 0x01, 0x07, pl, 92);
     return n;
 }
 
@@ -149,9 +144,9 @@ static int selftest(void)
     feed(buf, n);
     g = GPS_GetData(); s = GPS_GetStats();
     printStats();
-    CHECK(s->pvt == 2);                       /* gói 1 và 5 */
-    CHECK(s->packets == 4);                   /* PVT1, NAV-STATUS, gói 300 byte, PVT5 */
-    CHECK(s->badChecksum >= 2);               /* gói 2 + gói cụt nuốt gói 4 */
+    CHECK(s->pvt == 2);
+    CHECK(s->packets == 4);
+    CHECK(s->badChecksum >= 2);
     CHECK(g->latE7 == 107769123 + 10 && g->fixType == 3);
 
     printf("[4] fixType 5 (chỉ thời gian) không được coi là fix\n");
@@ -194,7 +189,7 @@ static int runFile(const char *path)
         s_tick += 10;
         s_feed = chunk; s_feedLen = n; s_feedPos = 0;
         while (s_feedPos < s_feedLen) {
-            size_t end = s_feedPos + 1;          /* đưa từng byte để in đúng từng gói */
+            size_t end = s_feedPos + 1;
             size_t save = s_feedLen;
             s_feedLen = end;
             GPS_Process();

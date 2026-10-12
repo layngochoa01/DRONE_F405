@@ -4,28 +4,13 @@
 #define PWM_MIN      ((float)MOTOR_MIN_US)
 #define PWM_MAX      ((float)MOTOR_MAX_US)
 #define PWM_DISARMED ((float)MOTOR_MIN_US)
-#define PWM_RANGE    (PWM_MAX - PWM_MIN) 
+#define PWM_RANGE    (PWM_MAX - PWM_MIN)
 
-/* =========================================================
- * Quad X — body FLU:
- *   +roll  = nghiêng phải  → tăng motor bên TRÁI
- *   +pitch = chúc mũi       → tăng motor phía SAU
- *   +yaw   = quay trái (CCW)→ tăng motor quay CW (phản lực CCW)
- *
- * Thứ tự hàng = chỉ số pwm_out (M1..M4), props-in:
- *   M1 (0): S3 PB15 FR (trước-phải, CCW)    M4 FL(CW)   M1 FR(CCW)
- *   M2 (1): S4 PA8  RR (sau-phải,  CW)             \ ^ /
- *   M3 (2): S5 PB11 RL (sau-trái,  CCW)              X
- *   M4 (3): S6 PB10 FL (trước-trái, CW)             / \
- *                                       M3 RL(CCW)  M2 RR(CW)
- * PHẢI kiểm tra bằng motor test (tháo cánh) trước khi bay.
- * ========================================================= */
 static const float s_mix[MOTOR_COUNT][3] = {
-    /* roll   pitch   yaw */
-    { -1.0f,  -1.0f,  -1.0f },   /* M1: FR CCW */
-    { -1.0f,  +1.0f,  +1.0f },   /* M2: RR CW  */
-    { +1.0f,  +1.0f,  -1.0f },   /* M3: RL CCW */
-    { +1.0f,  -1.0f,  +1.0f },   /* M4: FL CW  */
+    { -1.0f,  -1.0f,  -1.0f },
+    { -1.0f,  +1.0f,  +1.0f },
+    { +1.0f,  +1.0f,  -1.0f },
+    { +1.0f,  -1.0f,  +1.0f },
 };
 
 static bool s_armed = false;
@@ -47,11 +32,6 @@ void MotorMixer_SetArmed(bool armed)
     s_armed = armed;
 }
 
-bool MotorMixer_IsArmed(void)
-{
-    return s_armed;
-}
-
 void MotorMixer_Update(MotorOutput_t *out, float throttle, const Vec3_t *torque)
 {
     if (!s_armed) {
@@ -71,7 +51,6 @@ void MotorMixer_Update(MotorOutput_t *out, float throttle, const Vec3_t *torque)
     float headroomUp   = PWM_MAX - throttleUs;
     float headroomDown = throttleUs - PWM_MIN;
 
-    /* Thu nhỏ mô-men nếu vượt khoảng PWM, giữ nguyên ga */
     float scale = 1.0f;
     if (mixMax > headroomUp)    scale = fminf(scale, headroomUp   / mixMax);
     if (-mixMin > headroomDown) scale = fminf(scale, headroomDown / -mixMin);

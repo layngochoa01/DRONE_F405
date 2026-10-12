@@ -7,7 +7,7 @@ void Quaternion_Multiply(Quaternion_t *out, const Quaternion_t *a, const Quatern
     r.q1 = a->q0*b->q1 + a->q1*b->q0 + a->q2*b->q3 - a->q3*b->q2;
     r.q2 = a->q0*b->q2 - a->q1*b->q3 + a->q2*b->q0 + a->q3*b->q1;
     r.q3 = a->q0*b->q3 + a->q1*b->q2 - a->q2*b->q1 + a->q3*b->q0;
-    *out = r; 
+    *out = r;
 
 }
 
@@ -20,7 +20,7 @@ void  Quaternion_Conjugate(Quaternion_t *out, const Quaternion_t *q){
 
 void Quaternion_Normalize(Quaternion_t *q){
     float normSq = q->q0*q->q0 + q->q1*q->q1 + q->q2*q->q2 + q->q3*q->q3;
-    float scale  = (3.0f - normSq) * 0.5f;   // xấp xỉ 1/sqrt(normSq)
+    float scale  = (3.0f - normSq) * 0.5f;
     q->q0 *= scale;
     q->q1 *= scale;
     q->q2 *= scale;
@@ -64,4 +64,3 @@ void Quaternion_IntegrateBodyRate(Quaternion_t *q, const Vec3_t *rate, float dT)
     Quaternion_Multiply(q, q, &dq);
     Quaternion_Normalize(q);
 }
-

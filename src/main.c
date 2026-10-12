@@ -24,26 +24,17 @@
 #define NOISE_BIAS  0.00001f
 #define NOISE_BARO  0.0025f
 
-/* 1 = START in dữ liệu IMU THÔ theo trục chip (trước remap/calib/lọc) để xác định remap.
- * 0 = log bay bình thường. */
-#define DEBUG_IMU_RAW  0
-
-/* 0 = chưa hàn cảm biến → bỏ qua hoàn toàn (không init, không poll).
- * Khi tắt: POS_HOLD / FORWARD / LEFT tự bị từ chối, AHRS chỉ dùng gyro + accel. */
 #define COMPASS_ENABLE 1
 #define GPS_ENABLE     1
 
-#define CALIB_SAMPLES  2000U   /* ~1 s ở 2 kHz */
+#define CALIB_SAMPLES  2000U
 
 static volatile uint32_t ms_tick = 0;
-static ICM_Calibration_t s_cal;   
+static ICM_Calibration_t s_cal;
 static bool spl06_ready = false;
 
 static IMUFilter_t s_imuFilter;
-static volatile uint32_t s_imuMiss = 0;   /* lần TIM7 kích mà DMA lần trước chưa xong */
-#if DEBUG_IMU_RAW
-static ICM42605_Data s_rawChip;           /* trục chip, chưa remap/calib/lọc */
-#endif
+static volatile uint32_t s_imuMiss = 0;
 
 void systick_handler(void)
 {
@@ -66,24 +57,24 @@ static void clock_init(void)
     FLASH_ACR = FLASH_ACR_LATENCY_5WS | FLASH_ACR_PRFTEN
               | FLASH_ACR_ICEN | FLASH_ACR_DCEN;
     while ((FLASH_ACR & 0x7U) != 5U) {}
- 
+
     RCC->CR |= RCC_CR_HSION;
     while (!(RCC->CR & RCC_CR_HSIRDY)) {}
- 
+
     RCC->PLLCFGR = RCC_PLLCFGR_PLLM | RCC_PLLCFGR_PLLN
                  | RCC_PLLCFGR_PLLP_DIV2 | RCC_PLLCFGR_PLLSRC_HSI
                  | RCC_PLLCFGR_PLLQ;
- 
+
     RCC->CFGR = RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE1_DIV4
               | RCC_CFGR_PPRE2_DIV2;
- 
+
     RCC->CR |= RCC_CR_PLLON;
     while (!(RCC->CR & RCC_CR_PLLRDY)) {}
- 
+
     RCC->CFGR |= RCC_CFGR_SW_PLL;
     while ((RCC->CFGR & (3U << 2)) != RCC_CFGR_SWS_PLL) {}
 }
- 
+
 static void systick_init(void)
 {
     SYSTICK->LOAD = 168000U - 1U;
@@ -135,18 +126,14 @@ void hardfault_handler(void)
 void TIM7_IRQHandler(void)
 {
     if (TIM7->SR & TIM_SR_UIF) {
-        TIM7->SR &= ~TIM_SR_UIF; 
+        TIM7->SR &= ~TIM_SR_UIF;
         if (ICM42605_TriggerRead() == ICM_ERR_BUSY) s_imuMiss++;
     }
 }
 
-/* Chạy TRONG NGẮT DMA mỗi mẫu IMU (2 kHz): tiền xử lý rồi chạy vòng nhanh */
 static void imu_sample_isr(const ICM42605_Data *sample)
 {
     ICM42605_Data d = *sample;
-#if DEBUG_IMU_RAW
-    s_rawChip = d;
-#endif
     ICM42605_RemapAxes(&d);
     ICM42605_ApplyCalibration(&d, &s_cal);
     IMU_FilterApply(&s_imuFilter, &d);
@@ -159,7 +146,7 @@ void USART1_IRQHandler(void)
 }
 
 void USART2_IRQHandler(void)
-{  
+{
     SBUS_ISR_Handler();
 }
 
@@ -188,38 +175,38 @@ static void handle_calib_gyro(void)
 {
     UART5_WriteString("CALIB_GYRO: keep board STILL...\r\n");
     led_on(LED_BLUE_PIN);
- 
+
     ICM_CalibStatus_t gs = ICM42605_CalibrateGyro(&s_cal, CALIB_SAMPLES);
- 
+
     if (gs != CALIB_OK) {
         UART5_WriteF("CALIB_GYRO FAILED code=%d\r\n", gs);
         led_off(LED_BLUE_PIN);
         return;
     }
- 
+
     save_calib_to_flash();
 
     led_off(LED_BLUE_PIN);
 }
- 
+
 static void handle_calib_accel(void)
 {
     UART5_WriteString("CALIB_ACCEL: place board FLAT and STILL...\r\n");
     led_on(LED_BLUE_PIN);
- 
+
     ICM_CalibStatus_t as = ICM42605_CalibrateAccel(&s_cal, CALIB_SAMPLES);
- 
+
     if (as != CALIB_OK) {
         UART5_WriteF("CALIB_ACCEL FAILED code=%d\r\n", as);
         led_off(LED_BLUE_PIN);
         return;
     }
- 
+
     save_calib_to_flash();
- 
+
     led_off(LED_BLUE_PIN);
 }
- 
+
 static void handle_calib_erase(void)
 {
     FlashStatus_t fs = FlashStorage_Erase();
@@ -243,20 +230,6 @@ static void handle_calib_show(void)
                  (long)slot, (unsigned long)seq, s_cal.gyro_done, s_cal.accel_done);
     UART5_WriteF("G off: %.4f %.4f %.4f\r\n", s_cal.gx_offset, s_cal.gy_offset, s_cal.gz_offset);
     UART5_WriteF("A off: %.4f %.4f %.4f\r\n", s_cal.ax_offset, s_cal.ay_offset, s_cal.az_offset);
-}
-
-/* Đọc ngược thanh ghi TIM1/TIM2 + GPIO để kiểm tra cấu hình PWM */
-static void handle_pwm_debug(void)
-{
-    UART5_WriteF("TIM1 CR1:%lx CNT:%lu CCER:%lx BDTR:%lx M1(CCR3):%lu M2(CCR1):%lu\r\n",
-                 TIM1->CR1, TIM1->CNT, TIM1->CCER, TIM1->BDTR, TIM1->CCR3, TIM1->CCR1);
-    UART5_WriteF("TIM2 CR1:%lx CNT:%lu CCER:%lx M3(CCR4):%lu M4(CCR3):%lu\r\n",
-                 TIM2->CR1, TIM2->CNT, TIM2->CCER, TIM2->CCR4, TIM2->CCR3);
-    UART5_WriteF("PB15 m:%lu af:%lu | PA8 m:%lu af:%lu | PB11 m:%lu af:%lu | PB10 m:%lu af:%lu\r\n",
-                 (GPIOB->MODER >> 30) & 3U, (GPIOB->AFR[1] >> 28) & 0xFU,
-                 (GPIOA->MODER >> 16) & 3U, (GPIOA->AFR[1] >> 0)  & 0xFU,
-                 (GPIOB->MODER >> 22) & 3U, (GPIOB->AFR[1] >> 12) & 0xFU,
-                 (GPIOB->MODER >> 20) & 3U, (GPIOB->AFR[1] >> 8)  & 0xFU);
 }
 
 static void handle_calib(void){
@@ -304,7 +277,6 @@ int main(){
     cycle_counter_init();
     led_init();
 
-    /* ESC phải thấy 1000 µs ngay khi cấp nguồn (TIM1 APB2 168 MHz, TIM2 APB1 84 MHz) */
     Motor_Init(168000000U, 84000000U);
     Motor_StopAll();
 
@@ -330,7 +302,7 @@ int main(){
     GPS_Init();
 #endif
     delay_ms(15000);
-    spl06_ready = SPL06_Init();          /* SPL06_Init cũng khởi tạo I2C1 */
+    spl06_ready = SPL06_Init();
     AltitudeBaro_Init(101325.0f);
 
     if (spl06_ready) {
@@ -360,7 +332,7 @@ int main(){
         s_cal.ay_gain    = 1.0f;
         s_cal.az_gain    = 1.0f;
         s_cal.gyro_done  = (flash_data.gyro_done  != 0U);
-        s_cal.accel_done = (flash_data.accel_done != 0U);  
+        s_cal.accel_done = (flash_data.accel_done != 0U);
         UART5_WriteString("Calib loaded from Flash:\r\n");
         handle_calib_show();
     } else {
@@ -376,38 +348,34 @@ int main(){
     FlightControl_Init(spl06_ready, compass_ready);
 
     IMU_FilterInit(&s_imuFilter, FC_DT);
-    ICM42605_SetSampleCallback(imu_sample_isr);   /* vòng nhanh chạy trong ngắt DMA */
+    ICM42605_SetSampleCallback(imu_sample_isr);
 
-    Timer5_Init(84000000U);                  /* đếm 5 s cho FORWARD / LEFT */
-    Timer7_InitHz(84000000U, FC_LOOP_HZ);    /* kích đọc IMU 2 kHz */
+    Timer5_Init(84000000U);
+    Timer7_InitHz(84000000U, FC_LOOP_HZ);
     Timer7_Start();
 
-/////////////////////////////MAIN LOOP////////////////////////////////////
     uint32_t last_log = 0;
     enum { LOG_NORMAL, LOG_MAG, LOG_GPS, LOG_PERF, LOG_GPSCSV } log_mode = LOG_NORMAL;
-    uint32_t gps_log_pvt = 0;     /* số NAV-PVT đã in dòng G, */
-    uint32_t gps_stat_ms = 0;     /* lần in dòng S, gần nhất */
+    uint32_t gps_log_pvt = 0;
+    uint32_t gps_stat_ms = 0;
 
     while (1) {
         uint32_t now = get_tick();
 
-        /* Vòng nhanh 2 kHz chạy trong ngắt; ở đây chỉ còn các vòng chậm */
         FlightControl_SlowUpdate();
 
 #if GPS_ENABLE
-        GPS_Process();    
+        GPS_Process();
 #endif
         HC05_Poll();
 
         HC05_CalibCmd cmd = HC05_GetCalibCmd();
 
-        /* Chế độ log + calib compass */
         if (cmd == HC05_CMD_LOG_MAG)    { log_mode = LOG_MAG;    UART5_WriteString("LOG MAG\r\n"); }
         if (cmd == HC05_CMD_LOG_GPS)    { log_mode = LOG_GPS;    UART5_WriteString("LOG GPS\r\n"); }
         if (cmd == HC05_CMD_LOG_NORMAL) { log_mode = LOG_NORMAL; UART5_WriteString("LOG NORMAL\r\n"); }
         if (cmd == HC05_CMD_LOG_PERF)   { log_mode = LOG_PERF;   UART5_WriteString("LOG PERF\r\n"); }
         if (cmd == HC05_CMD_LOG_GPSCSV) {
-            /* Log GPS thô cho tools/gps_logger.py (cần START). Thay mọi log định kỳ khác. */
             log_mode    = LOG_GPSCSV;
             gps_log_pvt = GPS_GetStats()->pvt;
             gps_stat_ms = now;
@@ -432,9 +400,7 @@ int main(){
             }
         }
 
-        /* BENCH: thử dấu phản hồi (cần ARM trước, THÁO CÁNH) */
         if (cmd == HC05_CMD_BENCH_ON) {
-            /* Không có tay cầm → ARM qua Bluetooth (chỉ bench, tự DISARM sau 120 s) */
             if (FlightState_Get() == FLIGHT_STATE_DISARMED) FlightState_BluetoothBenchArm(true);
             UART5_WriteString(FlightControl_SetBench(true)
                               ? "BENCH ON (thao canh!) - BENCHOFF/DISARM de tat\r\n"
@@ -451,10 +417,8 @@ int main(){
             if (cmd == HC05_CMD_CALIB_ACCEL) handle_calib_accel();
             if (cmd == HC05_CMD_CALIB_ERASE) handle_calib_erase();
             if (cmd == HC05_CMD_CALIB_SHOW)  handle_calib_show();
-            if (cmd == HC05_CMD_PWM_DEBUG)   handle_pwm_debug();
         }
 
-        /* Motor test qua Bluetooth: M1..M4, MALL, MSTOP (THÁO CÁNH) */
         HC05_MotorTestCmd mcmd = HC05_GetMotorTestCmd();
         if (mcmd == HC05_MOTOR_STOP) {
             FlightControl_MotorTestStop();
@@ -471,27 +435,11 @@ int main(){
         }
 
         if (HC05_GetStreamState() == HC05_STREAM_RUN) {
-#if DEBUG_IMU_RAW
-            if ((now - last_log) >= 200U) {
-                last_log = now;
-                ICM42605_Data raw;
-                CRITICAL_BEGIN();
-                raw = s_rawChip;
-                CRITICAL_END();
-                HC05_SendIMU(&raw);
-            }
-#else
             if (log_mode == LOG_GPSCSV) {
-                /* ⚠ CHỈ DÙNG KHI ĐỨNG TRÊN MẶT ĐẤT — KHÔNG BẬT KHI ARM.
-                 * UART5_WriteF chặn: dòng G ~100 ký tự × 86.8 µs ≈ 9 ms; 10 dòng/s ≈ 90 ms/s
-                 * (~9% main loop). Vòng nhanh 2 kHz trong ngắt không bị ảnh hưởng, nhưng vòng
-                 * chậm (baro, state, độ cao) bị trễ tới ~9 ms mỗi dòng.
-                 * Mỗi gói NAV-PVT một dòng G (kể cả chưa fix); mỗi giây một dòng S. */
                 const GPS_Stats_t *gs = GPS_GetStats();
                 if (gs->pvt != gps_log_pvt) {
                     gps_log_pvt = gs->pvt;
-                    GPS_Data_t g = *GPS_GetData();   /* chụp lại trước khi in */
-                    /* Tách 2 lần in: bộ đệm UART5_WriteF chỉ 128 ký tự */
+                    GPS_Data_t g = *GPS_GetData();
                     UART5_WriteF("G,%lu,%lu,%u,%u,%u,%ld,%ld,",
                                  (unsigned long)now, (unsigned long)g.iTOW, g.fixType, g.flags,
                                  g.satellites, (long)g.latE7, (long)g.lonE7);
@@ -523,7 +471,6 @@ int main(){
                     const Compass_Data_t *c = FlightControl_GetCompass(&age);
                     float ox, oy, oz;
                     Compass_GetOffsets(&ox, &oy, &oz);
-                    /* Trục CHIP, đã trừ offset hard-iron (chưa remap) */
                     UART5_WriteF("MAG %s chip X:%6.3f Y:%6.3f Z:%6.3f | H:%5.1f | age:%lums%s\r\n",
                                  Compass_TypeName(), c->rawX - ox, c->rawY - oy, c->rawZ - oz,
                                  c->headingDeg, (unsigned long)age,
@@ -556,10 +503,9 @@ int main(){
                                  st->gpsValid, st->magHealthy);
                 }
             }
-#endif
         }
         else led_on(LED_BLUE_PIN);
     }
-    
+
     return 0;
 }

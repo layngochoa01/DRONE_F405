@@ -1,51 +1,42 @@
 #include "flash_storage.h"
 #include <string.h>
 
-/* =========================================================
- * FLASH REGISTERS - RM0090 Section 3.8
- * ========================================================= */
 #define FLASH_BASE_ADDR     0x40023C00UL
 
 typedef struct {
-    volatile uint32_t ACR;      /* 0x00 - Access control    */
-    volatile uint32_t KEYR;     /* 0x04 - Key register      */
-    volatile uint32_t OPTKEYR;  /* 0x08 - Option key        */
-    volatile uint32_t SR;       /* 0x0C - Status register   */
-    volatile uint32_t CR;       /* 0x10 - Control register  */
-    volatile uint32_t OPTCR;    /* 0x14 - Option control    */
+    volatile uint32_t ACR;
+    volatile uint32_t KEYR;
+    volatile uint32_t OPTKEYR;
+    volatile uint32_t SR;
+    volatile uint32_t CR;
+    volatile uint32_t OPTCR;
 } FLASH_TypeDef;
 
 #define FLASH   ((FLASH_TypeDef *)FLASH_BASE_ADDR)
 
-/* FLASH_KEYR -RM0090 3.9.3 */
 #define FLASH_KEY1      0x45670123UL
 #define FLASH_KEY2      0xCDEF89ABUL
 
-/* FLASH_SR bits */
-#define FLASH_SR_BSY    (1U << 16) 
-#define FLASH_SR_PGSERR (1U << 7)   
-#define FLASH_SR_PGPERR (1U << 6)   
-#define FLASH_SR_PGAERR (1U << 5)   
-#define FLASH_SR_WRPERR (1U << 4)   
-#define FLASH_SR_OPERR  (1U << 1)   
-#define FLASH_SR_EOP    (1U << 0)  
+#define FLASH_SR_BSY    (1U << 16)
+#define FLASH_SR_PGSERR (1U << 7)
+#define FLASH_SR_PGPERR (1U << 6)
+#define FLASH_SR_PGAERR (1U << 5)
+#define FLASH_SR_WRPERR (1U << 4)
+#define FLASH_SR_OPERR  (1U << 1)
+#define FLASH_SR_EOP    (1U << 0)
 #define FLASH_SR_ERR_MASK (FLASH_SR_PGSERR | FLASH_SR_PGPERR | \
                            FLASH_SR_PGAERR | FLASH_SR_WRPERR | FLASH_SR_OPERR)
 
-/* FLASH_CR bits */
-#define FLASH_CR_LOCK   (1U << 31)  /* Lock                 */
-#define FLASH_CR_ERRIE  (1U << 25)  /* Error interrupt      */
-#define FLASH_CR_EOPIE  (1U << 24)  /* EOP interrupt        */
-#define FLASH_CR_STRT   (1U << 16)  /* Start erase          */
-#define FLASH_CR_PSIZE_x32 (2U << 8) /* 32-bit parallelism  */
-#define FLASH_CR_SNB_SHIFT  3U      /* Sector number shift  */
-#define FLASH_CR_MER    (1U << 2)   /* Mass erase           */
-#define FLASH_CR_SER    (1U << 1)   /* Sector erase         */
-#define FLASH_CR_PG     (1U << 0)   /* Programming          */
+#define FLASH_CR_LOCK   (1U << 31)
+#define FLASH_CR_ERRIE  (1U << 25)
+#define FLASH_CR_EOPIE  (1U << 24)
+#define FLASH_CR_STRT   (1U << 16)
+#define FLASH_CR_PSIZE_x32 (2U << 8)
+#define FLASH_CR_SNB_SHIFT  3U
+#define FLASH_CR_MER    (1U << 2)
+#define FLASH_CR_SER    (1U << 1)
+#define FLASH_CR_PG     (1U << 0)
 
-/* =========================================================
- * PRIVATE 
- * ========================================================= */
 static uint32_t crc32_compute(const uint8_t *buf, uint32_t len)
 {
     uint32_t crc = 0xFFFFFFFFUL;
@@ -66,7 +57,6 @@ static uint32_t calib_crc(const CalibData_t *d)
     return crc32_compute((const uint8_t *)d,
                          sizeof(CalibData_t) - sizeof(uint32_t));
 }
-
 
 static void flash_unlock(void)
 {
@@ -91,7 +81,6 @@ static void flash_clear_errors(void)
     FLASH->SR = FLASH_SR_ERR_MASK | FLASH_SR_EOP;
 }
 
-/* ACR bits — flush cache sau khi xóa/ghi, tránh đọc dữ liệu cũ còn trong cache */
 #define FLASH_ACR_ICEN   (1U << 9)
 #define FLASH_ACR_DCEN   (1U << 10)
 #define FLASH_ACR_ICRST  (1U << 11)
@@ -111,12 +100,11 @@ static FlashStatus_t flash_erase_sector11(void)
     flash_wait_busy();
     flash_clear_errors();
 
-    /* Sector erase: SER=1, SNB=11, PSIZE=32bit */
     FLASH->CR = FLASH_CR_SER
               | (FLASH_SECTOR11_NUM << FLASH_CR_SNB_SHIFT)
               | FLASH_CR_PSIZE_x32;
 
-    FLASH->CR |= FLASH_CR_STRT;   
+    FLASH->CR |= FLASH_CR_STRT;
     flash_wait_busy();
 
     if (FLASH->SR & FLASH_SR_ERR_MASK) {
@@ -133,7 +121,6 @@ static FlashStatus_t flash_write_slot(uint32_t addr, const CalibData_t *data)
     flash_wait_busy();
     flash_clear_errors();
 
-    /* Bật programming mode, 32-bit parallelism */
     FLASH->CR = FLASH_CR_PG | FLASH_CR_PSIZE_x32;
 
     const uint32_t *src = (const uint32_t *)data;
@@ -168,7 +155,6 @@ static uint8_t flash_slot_is_blank(uint32_t index)
     return 1;
 }
 
-/* Tìm slot hợp lệ có sequence lớn nhất, và slot trống đầu tiên phía sau nó */
 static int32_t flash_scan(int32_t *firstBlank)
 {
     int32_t  best = -1;
@@ -192,10 +178,6 @@ static int32_t flash_scan(int32_t *firstBlank)
     }
     return best;
 }
-
-/* =========================================================
- * PUBLIC API
- * ========================================================= */
 
 uint8_t FlashStorage_IsValid(const CalibData_t *data)
 {
@@ -227,7 +209,6 @@ FlashStatus_t FlashStorage_Save(const CalibData_t *data)
     FlashStatus_t status = FLASH_OK;
     flash_unlock();
 
-    /* Hết slot trống → xóa cả sector, ghi lại từ đầu */
     if (blank < 0) {
         status = flash_erase_sector11();
         flash_flush_caches();
@@ -240,7 +221,6 @@ FlashStatus_t FlashStorage_Save(const CalibData_t *data)
     }
     flash_lock();
 
-    /* Đọc lại để chắc chắn đã ghi đúng */
     if (status == FLASH_OK && !FlashStorage_IsValid(flash_read_slot((uint32_t)blank))) {
         status = FLASH_ERR_WRITE;
     }

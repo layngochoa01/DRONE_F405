@@ -1,5 +1,5 @@
 #include "I2C.h"
-#include "register.h"   
+#include "register.h"
 
 #define I2C_TIMEOUT 100000UL
 
@@ -18,14 +18,14 @@ void I2C1_Init(void)
     RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
 
     GPIOB->MODER &= ~((3U << (I2C1_SCL_PIN*2)) | (3U << (I2C1_SDA_PIN*2)));
-    GPIOB->MODER |=  ((GPIO_MODE_AF << (I2C1_SCL_PIN*2)) | (GPIO_MODE_AF << (I2C1_SDA_PIN*2)));   
+    GPIOB->MODER |=  ((GPIO_MODE_AF << (I2C1_SCL_PIN*2)) | (GPIO_MODE_AF << (I2C1_SDA_PIN*2)));
 
-    GPIOB->OTYPER |= (1U << I2C1_SCL_PIN) | (1U << I2C1_SDA_PIN);             
+    GPIOB->OTYPER |= (1U << I2C1_SCL_PIN) | (1U << I2C1_SDA_PIN);
 
-    GPIOB->OSPEEDR |= (GPIO_SPEED_HIGH << (I2C1_SCL_PIN*2)) | (GPIO_SPEED_HIGH << (I2C1_SDA_PIN*2));    
+    GPIOB->OSPEEDR |= (GPIO_SPEED_HIGH << (I2C1_SCL_PIN*2)) | (GPIO_SPEED_HIGH << (I2C1_SDA_PIN*2));
 
     GPIOB->PUPDR &= ~((3U << (I2C1_SCL_PIN*2)) | (3U << (I2C1_SDA_PIN*2)));
-    GPIOB->PUPDR |=  ((GPIO_PUPD_UP << (I2C1_SCL_PIN*2)) | (GPIO_PUPD_UP << (I2C1_SDA_PIN*2)));  
+    GPIOB->PUPDR |=  ((GPIO_PUPD_UP << (I2C1_SCL_PIN*2)) | (GPIO_PUPD_UP << (I2C1_SDA_PIN*2)));
 
     GPIOB->AFR[1] &= ~(0xFU << ((I2C1_SCL_PIN - 8) * 4));
     GPIOB->AFR[1] |=  (GPIO_AF4_I2C1 << ((I2C1_SCL_PIN - 8) * 4));
@@ -35,9 +35,9 @@ void I2C1_Init(void)
     I2C1->CR1 |= I2C_CR1_SWRST;
     I2C1->CR1 &= ~I2C_CR1_SWRST;
 
-    I2C1->CR2 = 42;                
-    I2C1->CCR = 210;                
-    I2C1->TRISE = 43;               
+    I2C1->CR2 = 42;
+    I2C1->CCR = 210;
+    I2C1->TRISE = 43;
 
     I2C1->CR1 |= I2C_CR1_PE;
 }
@@ -49,7 +49,6 @@ static bool I2C1_Start(uint8_t devAddr, uint8_t rw)
 
     I2C1->DR = (uint32_t)((devAddr << 1) | rw);
 
-    /* Chờ ADDR; nếu thiết bị không trả lời (NACK → AF) thì thoát ngay và xóa AF */
     uint32_t timeout = I2C_TIMEOUT;
     while (!(I2C1->SR1 & I2C_SR1_ADDR)) {
         if (I2C1->SR1 & I2C_SR1_AF) {
@@ -60,7 +59,7 @@ static bool I2C1_Start(uint8_t devAddr, uint8_t rw)
     }
 
     (void)I2C1->SR1;
-    (void)I2C1->SR2;   
+    (void)I2C1->SR2;
 
     return true;
 }
@@ -101,7 +100,7 @@ bool I2C1_ReadRegs(uint8_t devAddr, uint8_t regAddr, uint8_t *buf, uint16_t len)
 
     for (uint16_t i = 0; i < len; i++) {
         if (i == len - 1) {
-            I2C1->CR1 &= ~I2C_CR1_ACK;  
+            I2C1->CR1 &= ~I2C_CR1_ACK;
             I2C1_Stop();
         }
         if (!I2C1_WaitFlag(&I2C1->SR1, I2C_SR1_RXNE, 1)) return false;

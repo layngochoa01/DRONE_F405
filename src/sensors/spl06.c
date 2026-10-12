@@ -18,7 +18,7 @@
 #define MEAS_CFG_TMP_RDY (1U << 5)
 #define COEF_SRCE_TMP_MASK (1U << 7)
 
-#define SPL06_SCALE_FACTOR  7864320.0f 
+#define SPL06_SCALE_FACTOR  7864320.0f
 
 static SPL06_Calib_t s_calib;
 
@@ -63,16 +63,16 @@ bool SPL06_Init(void)
 {
     I2C1_Init();
     I2C1_WriteReg(SPL06_ADDR, REG_RESET, 0x09);
-    for (volatile uint32_t i = 0; i < 100000U; i++) {}  
+    for (volatile uint32_t i = 0; i < 100000U; i++) {}
 
     uint8_t status = 0;
     uint32_t retries = 0;
     do {
         if (!I2C1_ReadReg(SPL06_ADDR, REG_MEAS_CFG, &status)) return false;
-        if (status & 0x80) break;  
+        if (status & 0x80) break;
         for (volatile uint32_t i = 0; i < 10000U; i++) {}
         retries++;
-    } while (retries < 50);  
+    } while (retries < 50);
 
     if (!readCalibCoefficients()) return false;
 
@@ -80,12 +80,8 @@ bool SPL06_Init(void)
     if (!I2C1_ReadReg(SPL06_ADDR, REG_COEF_SRCE, &coefSrce)) return false;
     uint8_t tmpExtBit = (coefSrce & COEF_SRCE_TMP_MASK) ? 0x80 : 0x00;
 
-    /* PM_RATE = 8 Hz (0x3<<4), oversampling x8 (0x3) → scale 7864320, không cần P_SHIFT */
     if (!I2C1_WriteReg(SPL06_ADDR, REG_PRS_CFG, 0x33)) return false;
-    // if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, 0x83)) return false;
-    // if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
 
-    /* Nhiệt độ cũng 8 Hz: SPL06_Update chờ cả PRS_RDY và TMP_RDY */
     if (!I2C1_WriteReg(SPL06_ADDR, REG_TMP_CFG, tmpExtBit | 0x33)) return false;
     if (!I2C1_WriteReg(SPL06_ADDR, REG_MEAS_CFG, MEAS_CFG_MEAS_CTRL)) return false;
     return true;
@@ -97,13 +93,12 @@ bool SPL06_Update(SPL06_Data_t *out)
     if (!I2C1_ReadReg(SPL06_ADDR, REG_MEAS_CFG, &status)) return false;
 
     if (!(status & MEAS_CFG_PRS_RDY) || !(status & MEAS_CFG_TMP_RDY)) {
-        return false; 
+        return false;
     }
-    
+
     int32_t rawPressure, rawTemperature;
     if (!readRaw24(REG_PSR_B2, &rawPressure)) return false;
     if (!readRaw24(REG_TMP_B2, &rawTemperature)) return false;
-    // UART5_WriteF("RAW: P=%ld T=%ld\r\n", (long)rawPressure, (long)rawTemperature);
     float pRaw = (float)rawPressure / SPL06_SCALE_FACTOR;
     float tRaw = (float)rawTemperature / SPL06_SCALE_FACTOR;
 

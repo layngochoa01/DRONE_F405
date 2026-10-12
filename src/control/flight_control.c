@@ -24,64 +24,52 @@
 
 #define MAG_TIMEOUT_MS   200U
 
-/* Dưới đất: kéo áp suất gốc về áp suất đo (mỗi mẫu baro ~8 Hz, τ ≈ 2.5 s) */
 #define BARO_NUDGE_ALPHA 0.05f
 
-/* LAND_BLIND: hạ ga tuyến tính từ mức đang bay về BLIND_THROTTLE trong BLIND_RAMP_MS */
 #define BLIND_THROTTLE   0.30f
 #define BLIND_RAMP_MS    10000.0f
 
 #define RAD2DEG          (180.0f / M_PIf)
 #define DEG2RAD          (M_PIf / 180.0f)
 
-/* =========================================================
- * Dữ liệu dùng chung giữa vòng nhanh (ngắt) và vòng chậm (main)
- * ========================================================= */
-
-/* Main → ngắt: setpoint và cờ. Main ghi trong vùng găng, ngắt chỉ đọc. */
 typedef struct {
-    float  rollSp, pitchSp, yawSp;   /* rad */
-    float  throttle;                 /* 0..1 */
-    bool   runRate;                  /* đang bay / BENCH → chạy rate PID */
+    float  rollSp, pitchSp, yawSp;
+    float  throttle;
+    bool   runRate;
     bool   motorsEnabled;
-    bool   testActive;               /* motor test */
+    bool   testActive;
     int8_t testMotor;
     bool   magValid;
     Vec3_t mag;
 } FastCmd_t;
 
-/* Ngắt → main: gia tốc hệ trái đất cộng dồn. Main lấy ra trong vùng găng. */
 typedef struct {
-    float    sumZ, sumN, sumW;   /* m/s², Z đã trừ g */
-    float    sumDt;              /* s, thời gian thực */
+    float    sumZ, sumN, sumW;
+    float    sumDt;
     uint32_t n;
 } AccelAccum_t;
 
 static FastCmd_t       s_cmd;
 static AccelAccum_t    s_acc;
-static volatile float  s_fastYaw     = 0.0f;   /* rad */
+static volatile float  s_fastYaw     = 0.0f;
 static volatile float  s_fastCosTilt = 1.0f;
 
-/* Đo tải vòng nhanh (đơn vị chu kỳ CPU) */
 static uint32_t s_lastSampleCyc = 0;
 static uint32_t s_execCyc = 0, s_execMaxCyc = 0;
 static uint32_t s_periodMinCyc = 0xFFFFFFFFU, s_periodMaxCyc = 0;
 
-/* =========================================================
- * Trạng thái của vòng chậm
- * ========================================================= */
 static bool     s_baroOk = false;
 static bool     s_magOk  = false;
 
 static Vec3_t   s_mag;
-static Compass_Data_t s_compass;   /* bản đọc gần nhất (debug) */
+static Compass_Data_t s_compass;
 static bool     s_hasMag = false;
 static uint32_t s_lastMagMs = 0;
 
 static uint32_t s_next25 = 0, s_nextMag = 0, s_next10 = 0;
 
 static float    s_throttle = 0.0f;
-static float    s_rollSp = 0.0f, s_pitchSp = 0.0f, s_yawSp = 0.0f;   /* rad */
+static float    s_rollSp = 0.0f, s_pitchSp = 0.0f, s_yawSp = 0.0f;
 static FlightState_e s_prevState = FLIGHT_STATE_DISARMED;
 static bool     s_gpsValid = false;
 
@@ -102,7 +90,6 @@ static float constrainf(float v, float lo, float hi)
     return v;
 }
 
-/* Đến lượt chạy tác vụ chu kỳ period chưa; tụt hậu quá 1 chu kỳ thì bắt nhịp lại */
 static bool due(uint32_t now, uint32_t *next, uint32_t period)
 {
     if ((int32_t)(now - *next) < 0) return false;
@@ -111,7 +98,6 @@ static bool due(uint32_t now, uint32_t *next, uint32_t period)
     return true;
 }
 
-/* 1000..2000 µs → [-1, 1] có vùng chết; mất RC → 0 */
 static float rcStick(uint8_t ch)
 {
     if (!SBUS_IsConnected() || SBUS_IsFailsafe()) return 0.0f;
@@ -172,18 +158,14 @@ void FlightControl_Init(bool baroOk, bool magOk)
 
     uint32_t now = get_tick();
     s_next25  = now;
-    s_nextMag = now + PERIOD_25HZ_MS / 2U;   /* lệch pha với baro để rải tải I2C */
+    s_nextMag = now + PERIOD_25HZ_MS / 2U;
     s_next10  = now;
 }
 
-/* =========================================================
- * VÒNG NHANH — 2 kHz, trong ngắt DMA
- * ========================================================= */
 void FlightControl_FastUpdate(const ICM42605_Data *data)
 {
     uint32_t t0 = cycle_now();
 
-    /* Chu kỳ thực giữa 2 mẫu */
     float dt = FC_DT;
     if (s_lastSampleCyc != 0U) {
         uint32_t period = t0 - s_lastSampleCyc;
@@ -193,9 +175,8 @@ void FlightControl_FastUpdate(const ICM42605_Data *data)
     }
     s_lastSampleCyc = t0;
 
-    FastCmd_t cmd = s_cmd;   /* main không chạy chen được vào ngắt → chép thẳng */
+    FastCmd_t cmd = s_cmd;
 
-    /* ---- AHRS ---- */
     Attitude_Update(data, cmd.magValid ? &cmd.mag : NULL, dt);
 
     float rMat[3][3];
@@ -203,7 +184,6 @@ void FlightControl_FastUpdate(const ICM42605_Data *data)
     s_fastYaw     = atan2f(rMat[1][0], rMat[0][0]);
     s_fastCosTilt = rMat[2][2];
 
-    /* ---- Cộng dồn gia tốc hệ trái đất (NWU) cho predict 100 Hz ---- */
     float ax = data->accel_x, ay = data->accel_y, az = data->accel_z;
     s_acc.sumZ  += Altitude_ComputeVerticalAccel(rMat, ax, ay, az);
     s_acc.sumN  += rMat[0][0]*ax + rMat[0][1]*ay + rMat[0][2]*az;
@@ -211,7 +191,6 @@ void FlightControl_FastUpdate(const ICM42605_Data *data)
     s_acc.sumDt += dt;
     s_acc.n++;
 
-    /* ---- Tư thế + rate PID ---- */
     Vec3_t gyroDegS = { data->gyro_x, data->gyro_y, data->gyro_z };
     Vec3_t torque   = { 0.0f, 0.0f, 0.0f };
 
@@ -230,10 +209,9 @@ void FlightControl_FastUpdate(const ICM42605_Data *data)
         };
         RateControl_Update(&torque, &rateSpDegS, &gyroDegS, FC_DT);
     } else {
-        RateControl_Reset(&gyroDegS);   /* dưới đất: không tích lũy tích phân */
+        RateControl_Reset(&gyroDegS);
     }
 
-    /* ---- Mixer → PWM ---- */
     MotorMixer_SetArmed(cmd.motorsEnabled);
 
     MotorOutput_t out;
@@ -255,16 +233,12 @@ void FlightControl_FastUpdate(const ICM42605_Data *data)
     if (exec > s_execMaxCyc) s_execMaxCyc = exec;
 }
 
-/* =========================================================
- * VÒNG CHẬM — main loop
- * ========================================================= */
 void FlightControl_SlowUpdate(void)
 {
     uint32_t now = get_tick();
     FlightState_e state = FlightState_Get();
     bool ground = onGround(state);
 
-    /* ---- ~100 Hz: trung bình gia tốc → predict (dT = thời gian tích lũy thực) ---- */
     if (s_acc.n >= FC_ACCEL_BLOCK) {
         CRITICAL_BEGIN();
         AccelAccum_t a = s_acc;
@@ -274,23 +248,20 @@ void FlightControl_SlowUpdate(void)
         float inv = 1.0f / (float)a.n;
         float azAvg = a.sumZ * inv;
 
-        if (ground) AltitudeKF_GroundAnchor(azAvg);   /* neo h = 0, v = 0, học bias */
+        if (ground) AltitudeKF_GroundAnchor(azAvg);
         else        AltitudeKF_Predict(azAvg, a.sumDt);
 
         Position_Predict(a.sumN * inv, a.sumW * inv, a.sumDt);
     }
 
-    /* ---- GPS: update ước lượng vị trí khi có mẫu mới ---- */
     if (GPS_IsNewData()) Position_UpdateGps(GPS_GetData(), now);
     s_gpsValid = Position_IsValid(now);
 
-    /* ---- Compass 25 Hz ---- */
     if (s_magOk && due(now, &s_nextMag, PERIOD_25HZ_MS)) readCompass(now);
     bool magHealthy = s_magOk && s_hasMag && ((now - s_lastMagMs) < MAG_TIMEOUT_MS);
 
     float yaw = s_fastYaw;
 
-    /* ---- 25 Hz: baro, STATE, vòng độ cao, vòng yaw ---- */
     if (due(now, &s_next25, PERIOD_25HZ_MS)) {
         if (s_baroOk) readBaro(now, ground);
 
@@ -302,7 +273,7 @@ void FlightControl_SlowUpdate(void)
         state  = FlightState_Get();
         ground = onGround(state);
 
-        if (state != FLIGHT_STATE_ARMED_IDLE) s_bench = false;   /* BENCH chỉ sống ở IDLE */
+        if (state != FLIGHT_STATE_ARMED_IDLE) s_bench = false;
         bool airborne = FlightState_IsAirborne(state) || s_bench;
         bool entered  = (state != s_prevState);
         s_prevState   = state;
@@ -313,7 +284,6 @@ void FlightControl_SlowUpdate(void)
             s_rollSp = s_pitchSp = 0.0f;
         }
 
-        /* Vòng độ cao → ga (bù nghiêng) */
         if (state == FLIGHT_STATE_LAND_BLIND) {
             if (entered) {
                 s_blindStartThr = s_throttle;
@@ -330,13 +300,11 @@ void FlightControl_SlowUpdate(void)
         }
         if (s_bench) s_throttle = FC_BENCH_THROTTLE;
 
-        /* Vòng yaw; khi LAND / LAND_BLIND cần yaw dành cho cử chỉ DISARM */
         if (airborne) {
             bool yawStickFree = (state != FLIGHT_STATE_LAND) && (state != FLIGHT_STATE_LAND_BLIND);
             s_yawSp = YawControl_Update(yawStickFree ? rcStick(FC_CH_YAW) : 0.0f, yaw, DT_25HZ);
         }
 
-        /* Vào POS_HOLD / FORWARD / LEFT: chốt điểm giữ, chạy XY ngay lượt này */
         if (entered && (state == FLIGHT_STATE_POS_HOLD ||
                         state == FLIGHT_STATE_MOVE_FORWARD ||
                         state == FLIGHT_STATE_MOVE_LEFT)) {
@@ -345,7 +313,6 @@ void FlightControl_SlowUpdate(void)
         }
     }
 
-    /* ---- 10 Hz: vòng vị trí XY → roll, pitch ---- */
     switch (state) {
         case FLIGHT_STATE_POS_HOLD:
             if (due(now, &s_next10, PERIOD_10HZ_MS))
@@ -362,17 +329,15 @@ void FlightControl_SlowUpdate(void)
             }
             break;
 
-        default:   /* CLIMB, ALT_HOLD, LAND, LAND_BLIND, dưới đất: giữ thăng bằng */
+        default:
             s_rollSp = s_pitchSp = 0.0f;
             break;
     }
 
-    /* ---- Motor test: chỉ khi DISARMED, tự dừng sau FC_MOTOR_TEST_MS ---- */
     if (s_testActive && (state != FLIGHT_STATE_DISARMED || (now - s_testStartMs) >= FC_MOTOR_TEST_MS)) {
         s_testActive = false;
     }
 
-    /* ---- Gửi setpoint cho vòng nhanh ---- */
     FastCmd_t cmd = {
         .rollSp        = s_rollSp,
         .pitchSp       = s_pitchSp,
@@ -389,7 +354,6 @@ void FlightControl_SlowUpdate(void)
     s_cmd = cmd;
     CRITICAL_END();
 
-    /* ---- Trạng thái cho telemetry ---- */
     s_status.rollSpDeg  = s_rollSp  * RAD2DEG;
     s_status.pitchSpDeg = s_pitchSp * RAD2DEG;
     s_status.yawSpDeg   = s_yawSp   * RAD2DEG;
