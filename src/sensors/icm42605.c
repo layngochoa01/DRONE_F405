@@ -2,6 +2,9 @@
 #include "register.h"
 #include "uart5.h"
 #include "spi.h"
+#include <stdbool.h>
+
+uint32_t get_tick(void);   /* main.c — SysTick 1 ms (system.h trùng tên delay_ms nội bộ) */
 #include <math.h>
 
 static const uint8_t  ICM_AAF_DELT     = 21;
@@ -107,9 +110,10 @@ ICM_Status ICM42605_Init(void)
     ICM_WriteReg(ICM_REG_PWR_MGMT0, ICM_PWR_GYRO_LN | ICM_PWR_ACCEL_LN);
     delay_ms(15);
 
-    ICM_WriteReg(ICM_REG_GYRO_CONFIG0, ICM_GYRO_FSR_2000DPS | ICM_GYRO_ODR_1KHZ);
+    /* ODR 4 kHz: vòng 2 kHz luôn đọc được mẫu mới */
+    ICM_WriteReg(ICM_REG_GYRO_CONFIG0, ICM_GYRO_FSR_2000DPS | ICM_GYRO_ODR_4KHZ);
     delay_ms(15);
-    ICM_WriteReg(ICM_REG_ACCEL_CONFIG0, ICM_ACCEL_FSR_16G | ICM_ACCEL_ODR_1KHZ);
+    ICM_WriteReg(ICM_REG_ACCEL_CONFIG0, ICM_ACCEL_FSR_16G | ICM_ACCEL_ODR_4KHZ);
     delay_ms(15);
 
     ICM_WriteReg(ICM_REG_GYRO_ACCEL_CONFIG0, ICM_FILT_BW_LOW_LATENCY);
@@ -204,6 +208,13 @@ ICM_Status ICM42605_TriggerRead(void)
     return ICM_OK;
 }
 
+static ICM42605_SampleCallback s_sampleCb = 0;
+
+void ICM42605_SetSampleCallback(ICM42605_SampleCallback cb)
+{
+    s_sampleCb = cb;
+}
+
 static void ICM42605_DMA_Callback(void)
 {
     ICM42605_RawData raw;
@@ -223,6 +234,8 @@ static void ICM42605_DMA_Callback(void)
     s_data_ready  = 1;
  
     s_dma_busy = 0;
+
+    if (s_sampleCb) s_sampleCb(&converted);
 }
  
 uint8_t ICM42605_IsDataReady(void)
@@ -238,86 +251,83 @@ void ICM42605_GetLatestData(ICM42605_Data *out)
     __asm volatile ("cpsie i" ::: "memory");   /* enable IRQ */
 }
 
+/* Gom n mẫu (đã remap về body), tính trung bình và độ lệch chuẩn từng trục.
+ * Kiểm tra "đứng yên" theo độ lệch chuẩn của cả lô (kiểu Betaflight) thay vì
+ * từng mẫu, để một mẫu nhiễu lẻ ở ODR cao không làm hỏng cả lần calib. */
+static bool calibCollect(uint16_t n, bool gyro, double mean[3], double sd[3],
+                         float vmin[3], float vmax[3])
+{
+    double sum[3] = { 0.0, 0.0, 0.0 };
+    double sq[3]  = { 0.0, 0.0, 0.0 };
+    for (int i = 0; i < 3; i++) { vmin[i] = 1e9f; vmax[i] = -1e9f; }
+    ICM42605_Data d;
+    uint16_t got = 0;
+    uint32_t start = get_tick();
+
+    while (got < n) {
+        if ((get_tick() - start) > CALIB_TIMEOUT_MS) return false;
+        if (!ICM42605_IsDataReady()) continue;
+        ICM42605_GetLatestData(&d);
+        ICM42605_RemapAxes(&d);
+
+        double v[3];
+        if (gyro) { v[0] = d.gyro_x;  v[1] = d.gyro_y;  v[2] = d.gyro_z;  }
+        else      { v[0] = d.accel_x; v[1] = d.accel_y; v[2] = d.accel_z; }
+        for (int i = 0; i < 3; i++) {
+            sum[i] += v[i];
+            sq[i]  += v[i] * v[i];
+            if ((float)v[i] < vmin[i]) vmin[i] = (float)v[i];
+            if ((float)v[i] > vmax[i]) vmax[i] = (float)v[i];
+        }
+        got++;
+    }
+
+    for (int i = 0; i < 3; i++) {
+        mean[i] = sum[i] / n;
+        double var = sq[i] / n - mean[i] * mean[i];
+        sd[i] = (var > 0.0) ? sqrt(var) : 0.0;
+    }
+    return true;
+}
+
 ICM_CalibStatus_t ICM42605_CalibrateGyro(ICM_Calibration_t *cal, uint16_t samples)
 {
     if (!cal || samples < CALIB_MIN_VALID_SAMPLES) {
         return CALIB_ERR_PARAM;
     }
 
-    double sum_gx = 0, sum_gy = 0, sum_gz = 0;
-    double mean_gx = 0, mean_gy = 0, mean_gz = 0;
-    uint16_t total     = 0;   
-    uint16_t valid     = 0;   
-    uint16_t max_total = samples * 3; 
-
-    ICM42605_Data data;
-
     UART5_WriteF("Gyro calib: keep board STILL...\r\n");
 
-    while (total < max_total && valid < samples) {
-
-        if (!ICM42605_IsDataReady()) continue;
-        ICM42605_GetLatestData(&data);
-        ICM42605_RemapAxes(&data);
-        total++;
-
-        if (valid == 0) {
-            mean_gx = data.gyro_x;
-            mean_gy = data.gyro_y;
-            mean_gz = data.gyro_z;
-            sum_gx  = data.gyro_x;
-            sum_gy  = data.gyro_y;
-            sum_gz  = data.gyro_z;
-            valid   = 1;
-            continue;
+    for (uint8_t attempt = 1; attempt <= CALIB_MAX_ATTEMPTS; attempt++) {
+        double mean[3], sd[3];
+        float vmin[3], vmax[3];
+        if (!calibCollect(samples, true, mean, sd, vmin, vmax)) {
+            UART5_WriteF("Gyro calib FAILED: no IMU data\r\n");
+            return CALIB_ERR_TIMEOUT;
         }
 
-        float dx = fabsf(data.gyro_x - (float)mean_gx);
-        float dy = fabsf(data.gyro_y - (float)mean_gy);
-        float dz = fabsf(data.gyro_z - (float)mean_gz);
+        UART5_WriteF("  try %u: std X:%.3f Y:%.3f Z:%.3f dps (max %.2f)\r\n",
+                     attempt, sd[0], sd[1], sd[2], CALIB_GYRO_STD_MAX);
+        /* Đỉnh-đỉnh ~6–8 lần std = nhiễu thường; lớn hơn nhiều = gai (vd lỗi SPI) */
+        UART5_WriteF("         p-p X:%.2f Y:%.2f Z:%.2f dps\r\n",
+                     vmax[0] - vmin[0], vmax[1] - vmin[1], vmax[2] - vmin[2]);
 
-        if (dx > CALIB_GYRO_MORON_THRESHOLD ||
-            dy > CALIB_GYRO_MORON_THRESHOLD ||
-            dz > CALIB_GYRO_MORON_THRESHOLD)
-        {
-            sum_gx = 0; sum_gy = 0; sum_gz = 0;
-            mean_gx = 0; mean_gy = 0; mean_gz = 0;
-            valid = 0;
-            UART5_WriteF("  [!] Motion detected, retrying...\r\n");
-            continue;
+        if (sd[0] <= CALIB_GYRO_STD_MAX && sd[1] <= CALIB_GYRO_STD_MAX && sd[2] <= CALIB_GYRO_STD_MAX) {
+            cal->gx_offset     = (float)mean[0];
+            cal->gy_offset     = (float)mean[1];
+            cal->gz_offset     = (float)mean[2];
+            cal->valid_samples = samples;
+            cal->gyro_done     = true;
+
+            UART5_WriteF("Gyro calib OK (%u samples): GX:%.4f GY:%.4f GZ:%.4f\r\n",
+                         samples, cal->gx_offset, cal->gy_offset, cal->gz_offset);
+            return CALIB_OK;
         }
-
-        sum_gx += data.gyro_x;
-        sum_gy += data.gyro_y;
-        sum_gz += data.gyro_z;
-        valid++;
-
-       
-        mean_gx = sum_gx / valid;
-        mean_gy = sum_gy / valid;
-        mean_gz = sum_gz / valid;
+        UART5_WriteF("  [!] Motion detected, retrying...\r\n");
     }
 
-    if (valid < CALIB_MIN_VALID_SAMPLES) {
-        UART5_WriteF("Gyro calib FAILED: board not still (%d valid)\r\n",
-                     valid);
-        return CALIB_ERR_NOT_STILL;
-    }
-
-    cal->gx_offset    = (float)mean_gx;
-    cal->gy_offset    = (float)mean_gy;
-    cal->gz_offset    = (float)mean_gz;
-    cal->valid_samples = valid;
-    cal->gyro_done    = true;
-
-    UART5_WriteF("Gyro calib OK (%d samples): "
-                 "GX:%.4f GY:%.4f GZ:%.4f\r\n",
-                 valid,
-                 cal->gx_offset,
-                 cal->gy_offset,
-                 cal->gz_offset);
-
-    return CALIB_OK;
+    UART5_WriteF("Gyro calib FAILED: board not still\r\n");
+    return CALIB_ERR_NOT_STILL;
 }
 
 ICM_CalibStatus_t ICM42605_CalibrateAccel(ICM_Calibration_t *cal, uint16_t samples)
@@ -326,85 +336,39 @@ ICM_CalibStatus_t ICM42605_CalibrateAccel(ICM_Calibration_t *cal, uint16_t sampl
         return CALIB_ERR_PARAM;
     }
 
-    double sum_ax = 0, sum_ay = 0, sum_az = 0;
-    double mean_ax = 0, mean_ay = 0, mean_az = 0;
-    uint16_t total     = 0;
-    uint16_t valid     = 0;
-    uint16_t max_total = samples * 3;
-
-    ICM42605_Data data;
-
     UART5_WriteF("Accel calib: place board FLAT and STILL...\r\n");
 
-    while (total < max_total && valid < samples) {
-
-        if (!ICM42605_IsDataReady()) continue;
-        ICM42605_GetLatestData(&data);
-        ICM42605_RemapAxes(&data);
-        total++;
-
-        if (valid == 0) {
-            mean_ax = data.accel_x;
-            mean_ay = data.accel_y;
-            mean_az = data.accel_z;
-            sum_ax  = data.accel_x;
-            sum_ay  = data.accel_y;
-            sum_az  = data.accel_z;
-            valid   = 1;
-            continue;
+    for (uint8_t attempt = 1; attempt <= CALIB_MAX_ATTEMPTS; attempt++) {
+        double mean[3], sd[3];
+        float vmin[3], vmax[3];
+        if (!calibCollect(samples, false, mean, sd, vmin, vmax)) {
+            UART5_WriteF("Accel calib FAILED: no IMU data\r\n");
+            return CALIB_ERR_TIMEOUT;
         }
 
-        /* MORON_THRESHOLD cho accel */
-        float dx = fabsf(data.accel_x - (float)mean_ax);
-        float dy = fabsf(data.accel_y - (float)mean_ay);
-        float dz = fabsf(data.accel_z - (float)mean_az);
+        UART5_WriteF("  try %u: std X:%.3f Y:%.3f Z:%.3f m/s2 (max %.2f)\r\n",
+                     attempt, sd[0], sd[1], sd[2], CALIB_ACC_STD_MAX);
+        UART5_WriteF("         p-p X:%.3f Y:%.3f Z:%.3f m/s2\r\n",
+                     vmax[0] - vmin[0], vmax[1] - vmin[1], vmax[2] - vmin[2]);
 
-        if (dx > CALIB_ACC_MORON_THRESHOLD ||
-            dy > CALIB_ACC_MORON_THRESHOLD ||
-            dz > CALIB_ACC_MORON_THRESHOLD)
-        {
-            sum_ax = 0; sum_ay = 0; sum_az = 0;
-            mean_ax = 0; mean_ay = 0; mean_az = 0;
-            valid = 0;
-            UART5_WriteF("  [!] Motion detected, retrying...\r\n");
-            continue;
+        if (sd[0] <= CALIB_ACC_STD_MAX && sd[1] <= CALIB_ACC_STD_MAX && sd[2] <= CALIB_ACC_STD_MAX) {
+            cal->ax_offset = (float)mean[0];
+            cal->ay_offset = (float)mean[1];
+            cal->az_offset = (float)mean[2] - 9.81f;
+            cal->ax_gain = 1.0f;
+            cal->ay_gain = 1.0f;
+            cal->az_gain = 1.0f;
+            cal->accel_done = true;
+
+            UART5_WriteF("Accel calib OK (%u samples): AX:%.4f AY:%.4f AZ:%.4f\r\n",
+                         samples, cal->ax_offset, cal->ay_offset, cal->az_offset);
+            return CALIB_OK;
         }
-
-        sum_ax += data.accel_x;
-        sum_ay += data.accel_y;
-        sum_az += data.accel_z;
-        valid++;
-
-        mean_ax = sum_ax / valid;
-        mean_ay = sum_ay / valid;
-        mean_az = sum_az / valid;
+        UART5_WriteF("  [!] Motion detected, retrying...\r\n");
     }
 
-    if (valid < CALIB_MIN_VALID_SAMPLES) {
-        UART5_WriteF("Accel calib FAILED: board not still (%d valid)\r\n",
-                     valid);
-        return CALIB_ERR_NOT_STILL;
-    }
-
-
-    cal->ax_offset = (float)mean_ax;          
-    cal->ay_offset = (float)mean_ay;         
-    cal->az_offset = (float)mean_az - 9.81f;  
-
-    cal->ax_gain = 1.0f;
-    cal->ay_gain = 1.0f;
-    cal->az_gain = 1.0f;
-
-    cal->accel_done = true;
-
-    UART5_WriteF("Accel calib OK (%d samples): "
-                 "AX:%.4f AY:%.4f AZ:%.4f\r\n",
-                 valid,
-                 cal->ax_offset,
-                 cal->ay_offset,
-                 cal->az_offset);
-
-    return CALIB_OK;
+    UART5_WriteF("Accel calib FAILED: board not still\r\n");
+    return CALIB_ERR_NOT_STILL;
 }
 
 void ICM42605_ApplyCalibration(ICM42605_Data *data, const ICM_Calibration_t *cal)

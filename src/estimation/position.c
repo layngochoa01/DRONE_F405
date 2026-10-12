@@ -36,7 +36,8 @@ void Position_Predict(float accN, float accW, float dT)
 
 void Position_UpdateGps(const GPS_Data_t *gps, uint32_t nowMs)
 {
-    if (!gps->fixValid || gps->satellites < POS_GPS_MIN_SATS || gps->hdop > POS_GPS_MAX_HDOP) {
+    /* Cổng chất lượng: fix 3D, đủ vệ tinh, hAcc chip báo đủ nhỏ, mẫu còn mới (gps.h) */
+    if (!GPS_IsHealthy(nowMs)) {
         return;
     }
 

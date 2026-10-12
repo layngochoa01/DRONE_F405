@@ -3,9 +3,14 @@
 #include <math.h>
 #include <stdbool.h>
 #define BIAS_FREEZE_VELOCITY_THRESHOLD 0.15f
-#define VELOCITY_DAMPING 0.98f//0.998f
+#define VELOCITY_DAMPING 0.998f   /* mỗi lần predict (100 Hz) */
 #define BARO_INNOVATION_GATE          3.0f// 0.5f 
 #define BARO_MA_WINDOW 4
+
+#define BARO_REJECT_RESET_COUNT  8      /* bị cổng 3σ loại liên tiếp ~1 s (8 Hz) → reset theo baro */
+#define BARO_HEALTH_TIMEOUT_MS   500U   /* quá lâu không có mẫu baro được nhận → không khỏe */
+#define GROUND_BIAS_ALPHA        0.02f  /* EMA bias khi neo dưới đất (gọi 100 Hz, τ ≈ 0.5 s) */
+#define GROUND_P_ALT_VEL         1e-3f  /* hiệp phương sai h, v khi đang neo */
 
 static float x[3]; 
 static float P[3][3];
@@ -17,6 +22,24 @@ static uint8_t s_pressIdx = 0;
 static bool s_pressBufFull = false;
 
 static AltitudeBaro_t s_baro;  
+
+static uint32_t s_lastAcceptMs = 0;
+static bool     s_everAccepted = false;
+static uint8_t  s_rejectCount  = 0;
+
+/* Đặt lại h, v về giá trị cho trước, xóa tương quan giữa (h, v) và các trạng thái khác */
+static void resetAltVel(float h, float pAltVel)
+{
+    x[0] = h;
+    x[1] = 0.0f;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            if ((i < 2 || j < 2) && i != j) P[i][j] = 0.0f;
+        }
+    }
+    P[0][0] = pAltVel;
+    P[1][1] = pAltVel;
+}
 
 static void mat3Mul(float out[3][3], const float a[3][3], const float b[3][3])
 {
@@ -119,15 +142,22 @@ void AltitudeKF_Predict(float verticalAccel_ms2, float dT)
     }
 }
 
-void AltitudeKF_UpdateBaro(float baroAltitude)
+bool AltitudeKF_UpdateBaro(float baroAltitude, uint32_t nowMs)
 {
     float y = baroAltitude - x[0];
     float S = P[0][0] + R;
 
     float innovationLimit = BARO_INNOVATION_GATE * sqrtf(S);
     if (fabsf(y) > innovationLimit) {
-        return;
+        /* Loại mẫu bất thường; bị loại liên tục ~1 s thì tin baro, đặt lại ước lượng */
+        if (++s_rejectCount < BARO_REJECT_RESET_COUNT) return false;
+        resetAltVel(baroAltitude, 1.0f);
+        s_rejectCount  = 0;
+        s_lastAcceptMs = nowMs;
+        s_everAccepted = true;
+        return true;
     }
+    s_rejectCount = 0;
     float K[3];
     K[0] = P[0][0] / S;
     K[1] = P[1][0] / S;
@@ -156,6 +186,27 @@ void AltitudeKF_UpdateBaro(float baroAltitude)
             P[j][i] = avg;
         }
     }
+
+    s_lastAcceptMs = nowMs;
+    s_everAccepted = true;
+    return true;
+}
+
+bool AltitudeKF_IsHealthy(uint32_t nowMs)
+{
+    return s_everAccepted && ((nowMs - s_lastAcceptMs) <= BARO_HEALTH_TIMEOUT_MS);
+}
+
+void AltitudeKF_GroundAnchor(float verticalAccel_ms2)
+{
+    /* Dưới đất đứng yên: gia tốc đứng (đã trừ g) chính là bias */
+    x[2] += GROUND_BIAS_ALPHA * (verticalAccel_ms2 - x[2]);
+    resetAltVel(0.0f, GROUND_P_ALT_VEL);
+}
+
+void Altitude_NudgeBaseline(float pressurePa, float alpha)
+{
+    s_baro.baselinePressure += alpha * (pressurePa - s_baro.baselinePressure);
 }
 
 const AltitudeKF_State_t *AltitudeKF_Get(void)

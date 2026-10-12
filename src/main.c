@@ -17,6 +17,7 @@
 #include "system.h"
 #include "flight_state.h"
 #include "flight_control.h"
+#include "position.h"
 
 #define NOISE_ALT   0.001f
 #define NOISE_VEL   0.001f
@@ -32,9 +33,17 @@
 #define COMPASS_ENABLE 1
 #define GPS_ENABLE     1
 
+#define CALIB_SAMPLES  2000U   /* ~1 s ở 2 kHz */
+
 static volatile uint32_t ms_tick = 0;
 static ICM_Calibration_t s_cal;   
 static bool spl06_ready = false;
+
+static IMUFilter_t s_imuFilter;
+static volatile uint32_t s_imuMiss = 0;   /* lần TIM7 kích mà DMA lần trước chưa xong */
+#if DEBUG_IMU_RAW
+static ICM42605_Data s_rawChip;           /* trục chip, chưa remap/calib/lọc */
+#endif
 
 void systick_handler(void)
 {
@@ -127,8 +136,21 @@ void TIM7_IRQHandler(void)
 {
     if (TIM7->SR & TIM_SR_UIF) {
         TIM7->SR &= ~TIM_SR_UIF; 
-        ICM42605_TriggerRead();
+        if (ICM42605_TriggerRead() == ICM_ERR_BUSY) s_imuMiss++;
     }
+}
+
+/* Chạy TRONG NGẮT DMA mỗi mẫu IMU (2 kHz): tiền xử lý rồi chạy vòng nhanh */
+static void imu_sample_isr(const ICM42605_Data *sample)
+{
+    ICM42605_Data d = *sample;
+#if DEBUG_IMU_RAW
+    s_rawChip = d;
+#endif
+    ICM42605_RemapAxes(&d);
+    ICM42605_ApplyCalibration(&d, &s_cal);
+    IMU_FilterApply(&s_imuFilter, &d);
+    FlightControl_FastUpdate(&d);
 }
 
 void USART1_IRQHandler(void)
@@ -167,7 +189,7 @@ static void handle_calib_gyro(void)
     UART5_WriteString("CALIB_GYRO: keep board STILL...\r\n");
     led_on(LED_BLUE_PIN);
  
-    ICM_CalibStatus_t gs = ICM42605_CalibrateGyro(&s_cal, 200);
+    ICM_CalibStatus_t gs = ICM42605_CalibrateGyro(&s_cal, CALIB_SAMPLES);
  
     if (gs != CALIB_OK) {
         UART5_WriteF("CALIB_GYRO FAILED code=%d\r\n", gs);
@@ -185,7 +207,7 @@ static void handle_calib_accel(void)
     UART5_WriteString("CALIB_ACCEL: place board FLAT and STILL...\r\n");
     led_on(LED_BLUE_PIN);
  
-    ICM_CalibStatus_t as = ICM42605_CalibrateAccel(&s_cal, 200);
+    ICM_CalibStatus_t as = ICM42605_CalibrateAccel(&s_cal, CALIB_SAMPLES);
  
     if (as != CALIB_OK) {
         UART5_WriteF("CALIB_ACCEL FAILED code=%d\r\n", as);
@@ -279,6 +301,7 @@ int main(){
 
     clock_init();
     systick_init();
+    cycle_counter_init();
     led_init();
 
     /* ESC phải thấy 1000 µs ngay khi cấp nguồn (TIM1 APB2 168 MHz, TIM2 APB1 84 MHz) */
@@ -352,35 +375,24 @@ int main(){
     AltitudeKF_Init(NOISE_ALT, NOISE_VEL, NOISE_BIAS, NOISE_BARO);
     FlightControl_Init(spl06_ready, compass_ready);
 
-    ICM42605_Data data;
-    IMUFilter_t   imu_filter;
-    IMU_FilterInit(&imu_filter, FC_DT);
+    IMU_FilterInit(&s_imuFilter, FC_DT);
+    ICM42605_SetSampleCallback(imu_sample_isr);   /* vòng nhanh chạy trong ngắt DMA */
 
-    Timer5_Init(84000000U);              /* đếm 5 s cho FORWARD / LEFT */
-    Timer7_InitHz(84000000U, FC_LOOP_HZ);   /* kích đọc IMU 100 Hz */
+    Timer5_Init(84000000U);                  /* đếm 5 s cho FORWARD / LEFT */
+    Timer7_InitHz(84000000U, FC_LOOP_HZ);    /* kích đọc IMU 2 kHz */
     Timer7_Start();
 
 /////////////////////////////MAIN LOOP////////////////////////////////////
     uint32_t last_log = 0;
-    enum { LOG_NORMAL, LOG_MAG, LOG_GPS } log_mode = LOG_NORMAL;
-#if DEBUG_IMU_RAW
-    ICM42605_Data raw_chip = {0};      /* trục chip, chưa remap/calib/lọc */
-#endif
+    enum { LOG_NORMAL, LOG_MAG, LOG_GPS, LOG_PERF, LOG_GPSCSV } log_mode = LOG_NORMAL;
+    uint32_t gps_log_pvt = 0;     /* số NAV-PVT đã in dòng G, */
+    uint32_t gps_stat_ms = 0;     /* lần in dòng S, gần nhất */
 
     while (1) {
         uint32_t now = get_tick();
 
-        /* 100 Hz: TIM7 kích đọc IMU qua DMA → toàn bộ chuỗi ước lượng + điều khiển */
-        if (ICM42605_IsDataReady()) {
-            ICM42605_GetLatestData(&data);
-#if DEBUG_IMU_RAW
-            raw_chip = data;               /* chép TRƯỚC khi remap để debug trục */
-#endif
-            ICM42605_RemapAxes(&data);
-            ICM42605_ApplyCalibration(&data, &s_cal);
-            IMU_FilterApply(&imu_filter, &data);
-            FlightControl_Update(&data);
-        }
+        /* Vòng nhanh 2 kHz chạy trong ngắt; ở đây chỉ còn các vòng chậm */
+        FlightControl_SlowUpdate();
 
 #if GPS_ENABLE
         GPS_Process();    
@@ -393,6 +405,16 @@ int main(){
         if (cmd == HC05_CMD_LOG_MAG)    { log_mode = LOG_MAG;    UART5_WriteString("LOG MAG\r\n"); }
         if (cmd == HC05_CMD_LOG_GPS)    { log_mode = LOG_GPS;    UART5_WriteString("LOG GPS\r\n"); }
         if (cmd == HC05_CMD_LOG_NORMAL) { log_mode = LOG_NORMAL; UART5_WriteString("LOG NORMAL\r\n"); }
+        if (cmd == HC05_CMD_LOG_PERF)   { log_mode = LOG_PERF;   UART5_WriteString("LOG PERF\r\n"); }
+        if (cmd == HC05_CMD_LOG_GPSCSV) {
+            /* Log GPS thô cho tools/gps_logger.py (cần START). Thay mọi log định kỳ khác. */
+            log_mode    = LOG_GPSCSV;
+            gps_log_pvt = GPS_GetStats()->pvt;
+            gps_stat_ms = now;
+            UART5_WriteString("# GPSCSV G,t_ms,iTOW,fixType,flags,numSV,latE7,lonE7,hMSL_mm,hAcc_mm,"
+                              "vAcc_mm,velN_mmps,velE_mmps,velD_mmps,gSpeed_mmps,sAcc_mmps,pDOP\r\n");
+            UART5_WriteString("# GPSCSV S,bytes,packets,pvt,badChecksum,resync,fixType,numSV\r\n");
+        }
         if (cmd == HC05_CMD_MAGCAL) {
             if (FlightState_Get() == FLIGHT_STATE_DISARMED && Compass_GetType() != COMPASS_NONE) {
                 Compass_CalStart();
@@ -452,14 +474,51 @@ int main(){
 #if DEBUG_IMU_RAW
             if ((now - last_log) >= 200U) {
                 last_log = now;
-                HC05_SendIMU(&raw_chip);
+                ICM42605_Data raw;
+                CRITICAL_BEGIN();
+                raw = s_rawChip;
+                CRITICAL_END();
+                HC05_SendIMU(&raw);
             }
 #else
-            if ((now - last_log) >= 200U) {
+            if (log_mode == LOG_GPSCSV) {
+                /* ⚠ CHỈ DÙNG KHI ĐỨNG TRÊN MẶT ĐẤT — KHÔNG BẬT KHI ARM.
+                 * UART5_WriteF chặn: dòng G ~100 ký tự × 86.8 µs ≈ 9 ms; 10 dòng/s ≈ 90 ms/s
+                 * (~9% main loop). Vòng nhanh 2 kHz trong ngắt không bị ảnh hưởng, nhưng vòng
+                 * chậm (baro, state, độ cao) bị trễ tới ~9 ms mỗi dòng.
+                 * Mỗi gói NAV-PVT một dòng G (kể cả chưa fix); mỗi giây một dòng S. */
+                const GPS_Stats_t *gs = GPS_GetStats();
+                if (gs->pvt != gps_log_pvt) {
+                    gps_log_pvt = gs->pvt;
+                    GPS_Data_t g = *GPS_GetData();   /* chụp lại trước khi in */
+                    /* Tách 2 lần in: bộ đệm UART5_WriteF chỉ 128 ký tự */
+                    UART5_WriteF("G,%lu,%lu,%u,%u,%u,%ld,%ld,",
+                                 (unsigned long)now, (unsigned long)g.iTOW, g.fixType, g.flags,
+                                 g.satellites, (long)g.latE7, (long)g.lonE7);
+                    UART5_WriteF("%ld,%lu,%lu,%ld,%ld,%ld,%ld,%lu,%u\r\n",
+                                 (long)g.hMSLmm, (unsigned long)g.hAccMm, (unsigned long)g.vAccMm,
+                                 (long)g.velNmms, (long)g.velEmms, (long)g.velDmms,
+                                 (long)g.gSpeedMms, (unsigned long)g.sAccMms, g.pDOP);
+                }
+                if ((now - gps_stat_ms) >= 1000U) {
+                    gps_stat_ms = now;
+                    const GPS_Data_t *g = GPS_GetData();
+                    UART5_WriteF("S,%lu,%lu,%lu,%lu,%lu,%u,%u\r\n",
+                                 (unsigned long)gs->bytes, (unsigned long)gs->packets,
+                                 (unsigned long)gs->pvt, (unsigned long)gs->badChecksum,
+                                 (unsigned long)gs->resync, g->fixType, g->satellites);
+                }
+            } else if ((now - last_log) >= 200U) {
                 last_log = now;
                 const Attitude_t *att = Attitude_Get();
                 const FlightControl_Status_t *st = FlightControl_GetStatus();
-                if (log_mode == LOG_MAG) {
+                if (log_mode == LOG_PERF) {
+                    FlightControl_Perf_t pf;
+                    FlightControl_GetPerf(&pf, true);
+                    UART5_WriteF("PERF exec:%.1f/%.1fus period:%.1f..%.1fus (muc tieu %luus) miss:%lu\r\n",
+                                 pf.execUs, pf.execMaxUs, pf.periodMinUs, pf.periodMaxUs,
+                                 (unsigned long)(1000000U / FC_LOOP_HZ), (unsigned long)s_imuMiss);
+                } else if (log_mode == LOG_MAG) {
                     uint32_t age;
                     const Compass_Data_t *c = FlightControl_GetCompass(&age);
                     float ox, oy, oz;
@@ -472,9 +531,13 @@ int main(){
                 } else if (log_mode == LOG_GPS) {
                     const GPS_Stats_t *gs = GPS_GetStats();
                     const GPS_Data_t  *g  = GPS_GetData();
-                    UART5_WriteF("GPS bytes:%lu nmea:%lu gga:%lu fixQ:%u sats:%u hdop:%.1f\r\n",
-                                 (unsigned long)gs->bytes, (unsigned long)gs->sentences,
-                                 (unsigned long)gs->gga, gs->fixQuality, g->satellites, g->hdop);
+                    UART5_WriteF("GPS bytes:%lu pkt:%lu pvt:%lu badck:%lu resync:%lu drop:%lu\r\n",
+                                 (unsigned long)gs->bytes, (unsigned long)gs->packets,
+                                 (unsigned long)gs->pvt, (unsigned long)gs->badChecksum,
+                                 (unsigned long)gs->resync, (unsigned long)UART1_GetDroppedCount());
+                    UART5_WriteF("    fix:%u ok:%u sv:%u hAcc:%.2fm pDOP:%.2f healthy:%d\r\n",
+                                 g->fixType, (unsigned)(g->flags & 1U), g->satellites,
+                                 g->hAccM, g->hdop, (int)GPS_IsHealthy(now));
                     if (g->fixValid) {
                         UART5_WriteF("    lat:%.7f lon:%.7f alt:%.1f vN:%.2f vE:%.2f valid:%d\r\n",
                                      (double)g->latE7 * 1e-7, (double)g->lonE7 * 1e-7,

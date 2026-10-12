@@ -30,13 +30,27 @@ void PID_Init(PID_t *pid, float kp, float ki, float kd)
 
     pid->integrator = 0.0f;
     pid->prevMeasurement = 0.0f;
+    pid->dAlpha = 0.0f;
+    pid->dState = 0.0f;
+}
+
+void PID_SetDFilter(PID_t *pid, float cutoffHz, float dT)
+{
+    float rc = 1.0f / (2.0f * 3.14159265f * cutoffHz);
+    pid->dAlpha = dT / (rc + dT);
+    pid->dState = 0.0f;
 }
 
 float PID_Update(PID_t *pid, float error, float measurement, float dT, float outMin, float outMax)
 {
     float p = pid->kp * error;
-    float d = -pid->kd * (measurement - pid->prevMeasurement) / dT;
+    float dRaw = -(measurement - pid->prevMeasurement) / dT;
     pid->prevMeasurement = measurement;
+    if (pid->dAlpha > 0.0f) {
+        pid->dState += pid->dAlpha * (dRaw - pid->dState);
+        dRaw = pid->dState;
+    }
+    float d = pid->kd * dRaw;
 
     float outVal = p + pid->integrator + d;
     float outConstrained = constrainf(outVal, outMin, outMax);
@@ -56,4 +70,5 @@ void PID_Reset(PID_t *pid)
 {
     pid->integrator = 0.0f;
     pid->prevMeasurement = 0.0f;
+    pid->dState = 0.0f;
 }

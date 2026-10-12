@@ -40,7 +40,7 @@ void SPI1_Init(void)
               | SPI_CR1_CPHA       /* CPHA = 1 */
               | SPI_CR1_SSM        /* Software NSS */
               | SPI_CR1_SSI        /* SSI = 1 (NSS internal high) */
-              | SPI_CR1_BR_DIV16;  /* 84MHz / 16 = 5.25MHz */
+              | SPI_CR1_BR_DIV8;   /* 84MHz / 8 = 10.5MHz (ICM-42605 tối đa 24MHz) */
 
     SPI1->CR1 |= SPI_CR1_SPE;
 }

@@ -56,19 +56,35 @@ make map        # tóm tắt các section từ file map của linker
 2. Khởi động HC-05 (UART5) và SBUS (USART2).
 3. Firmware chờ khoảng 15 s, khởi tạo SPL06, chờ thêm khoảng 8 s, rồi lấy trung bình 50 mẫu áp suất làm mốc mặt đất (baseline).
 4. Đọc thông số calib IMU từ Flash. Nếu chưa có thì dùng offset bằng 0 và in ra `No calib data, using defaults`.
-5. Khởi tạo bộ lọc Kalman độ cao, chạy TIM2 ở 100 Hz, rồi bắt đầu vòng lặp chính.
+5. Khởi tạo bộ lọc Kalman độ cao, chạy TIM7 ở 2 kHz (kích đọc IMU), rồi bắt đầu vòng lặp chính.
 
-## Vòng lặp chính (100 Hz, mỗi khi có dữ liệu IMU mới)
+## Vòng lặp: nhanh 2 kHz trong ngắt, chậm trong main loop
+
+**Vòng nhanh (2 kHz, trong ngắt DMA, `FlightControl_FastUpdate`):** TIM7 kích đọc IMU mỗi 0.5 ms (ICM-42605 chạy ODR 4 kHz). Đọc xong, ngắt DMA chạy cả chuỗi:
 
 ```
-ICM42605 → remap trục → áp calib → lọc PT1
-        → Attitude_Update (quaternion)
-        → gia tốc thẳng đứng (hệ thế giới) → AltitudeKF_Predict
-        → AttitudeControl (setpoint q = nằm ngang) → setpoint tốc độ góc
-        → PID RateControl → ngõ ra tốc độ góc
+ICM42605 → remap trục → trừ calib → lọc PT1 (accel 20 Hz, gyro 100 Hz)
+        → AHRS (quaternion) → cộng dồn gia tốc hệ trái đất
+        → quaternion mục tiêu → điều khiển tư thế → rate PID (lọc D 80 Hz)
+        → mixer → PWM
 ```
 
-Giữa các mẫu IMU, vòng lặp kiểm tra lệnh HC-05 và frame SBUS.
+**Vòng chậm (main loop, `FlightControl_SlowUpdate`):**
+
+| Nhịp | Công việc |
+|---|---|
+| ~100 Hz | Trung bình 20 mẫu gia tốc → predict Kalman độ cao và ước lượng vị trí (dT = thời gian thực) |
+| 25 Hz | Baro → update Kalman; máy trạng thái; vòng độ cao → ga; vòng yaw |
+| 25 Hz | Compass (lệch pha 20 ms với baro) |
+| 10 Hz | Vòng vị trí XY → roll, pitch |
+| khi có | GPS → update ước lượng vị trí |
+
+Vì đọc I2C và in log Bluetooth chỉ nằm ở vòng chậm, chúng không làm lỡ nhịp 2 kHz. Gửi `LOGPERF` để xem thời gian xử lý vòng nhanh, chu kỳ thực và số lần lỡ đọc IMU.
+
+**Ước lượng độ cao:**
+- Khi DISARMED hoặc IDLE, Kalman neo h = 0, v = 0, học bias accel, và kéo dần áp suất gốc theo thời tiết.
+- Baro bị loại liên tục khoảng 1 s thì reset theo baro.
+- Quá 500 ms không có mẫu baro hợp lệ thì `AltitudeKF_IsHealthy()` = false. Khi đó đang bay sẽ chuyển sang **LAND_BLIND**: ga giảm dần về 0.30 trong 10 s, chỉ nhận cử chỉ DISARM; baro tốt lại thì về ALT_HOLD. Đang ở dưới đất thì không cho CLIMB.
 
 ## Lệnh Bluetooth (HC-05, 115200 baud)
 

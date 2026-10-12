@@ -27,6 +27,9 @@ void  AltitudeControl_Reset(float altitude, float velocity);
 
 float AltitudeControl_Update(FlightState_e state, float targetAlt, float altitude, float velocity, float cosTilt, float dT);
 
-float AltitudeControl_GetVelSetpoint(void);   
+float AltitudeControl_GetVelSetpoint(void);
+/* Nạp mức ga hiện tại (khi ga do nơi khác quyết định, vd LAND_BLIND) để lúc
+ * vòng độ cao chạy lại không bị giật ga; lần chạy sau sẽ reset PID. */
+void  AltitudeControl_SeedThrottle(float throttle);   
 
 #endif

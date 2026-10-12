@@ -3,11 +3,13 @@
 
 static PID_t s_pidRoll, s_pidPitch, s_pidYaw;
 
-void RateControl_Init(void)
+void RateControl_Init(float loopDt)
 {
     PID_Init(&s_pidRoll,  0.6f, 0.02f, 0.01f);
     PID_Init(&s_pidPitch, 0.6f, 0.02f, 0.01f);
     PID_Init(&s_pidYaw,   1.0f, 0.03f, 0.0f);
+    PID_SetDFilter(&s_pidRoll,  RATE_D_LPF_HZ, loopDt);
+    PID_SetDFilter(&s_pidPitch, RATE_D_LPF_HZ, loopDt);
 }
 
 void RateControl_Reset(const Vec3_t *gyroDegS)

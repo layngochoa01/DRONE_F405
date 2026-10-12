@@ -15,8 +15,7 @@
  * (bộ lọc bù 2 trạng thái / trục).
  * ========================================================= */
 
-#define POS_GPS_MIN_SATS     6U
-#define POS_GPS_MAX_HDOP     2.5f
+/* Chất lượng mẫu GPS: xem GPS_IsHealthy() và các GPS_HEALTH_* trong gps.h */
 #define POS_GPS_TIMEOUT_MS   1500U
 
 typedef struct {

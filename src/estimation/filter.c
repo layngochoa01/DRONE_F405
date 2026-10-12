@@ -35,7 +35,7 @@ void pt1FilterReset(PT1Filter_t *f, float value)
 }
 
 #define ACCEL_CUTOFF_HZ  20.0f
-#define GYRO_CUTOFF_HZ   30.0f
+#define GYRO_CUTOFF_HZ   100.0f   /* vòng 2 kHz: ít trễ hơn 30 Hz cũ */
 
 void IMU_FilterInit(IMUFilter_t *f, float dt)
 {

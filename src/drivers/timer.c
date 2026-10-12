@@ -2,7 +2,7 @@
 #include "register.h"
 
 /* =========================================================
- * Timer7_InitHz (kích đọc IMU 100 Hz — TIM2 nhường cho PWM5/6)
+ * Timer7_InitHz (kích đọc IMU 2 kHz — TIM2 nhường cho PWM5/6)
  *
  * Công thức tần số timer (RM0090 Section 13.4):
  *   f_update = timer_clk_hz / ((PSC + 1) * (ARR + 1))
@@ -14,10 +14,10 @@
  *   - Ở đây: PSC sao cho tick = 1MHz (1us/tick), sau đó
  *     ARR = (1000000 / freq_hz) - 1
  *
- * Ví dụ: timer_clk_hz = 84,000,000Hz (APB1*2), freq_hz = 100Hz
+ * Ví dụ: timer_clk_hz = 84,000,000Hz (APB1*2), freq_hz = 2000Hz
  *   PSC = (84,000,000 / 1,000,000) - 1 = 83
- *   ARR = (1,000,000 / 100) - 1       = 9999
- *   → f_update = 84,000,000 / (84 * 10000) = 100Hz  (đúng)
+ *   ARR = (1,000,000 / 2000) - 1      = 499
+ *   → f_update = 84,000,000 / (84 * 500) = 2000Hz  (đúng)
  * ========================================================= */
 void Timer7_InitHz(uint32_t timer_clk_hz, uint32_t freq_hz)
 {

@@ -43,6 +43,7 @@ static float      s_gestureTimer   = 0.0f;
 static bool       s_gestureLatched = false;   /* chờ cần phải về giữa */
 static bool       s_btArmed        = false;   /* ARM qua Bluetooth (bench) */
 static float      s_btArmTimer     = 0.0f;
+static bool       s_altOk          = false;   /* ước lượng độ cao khỏe (cập nhật mỗi lượt) */
 
 static StickPos_e stickPos(uint16_t us)
 {
@@ -108,6 +109,7 @@ static void applyThrottle(StickPos_e thr, float currentAltitude, bool navOk)
 {
     switch (thr) {
         case STICK_HIGH:   /* 1. CLIMB */
+            if (!s_altOk) break;   /* không có độ cao tin cậy → không cho bay lên */
             if (s_state == FLIGHT_STATE_CLIMB) {
                 s_targetAltitude += CLIMB_STEP_METERS;
             } else {
@@ -171,9 +173,10 @@ void FlightState_Init(void)
     goDisarmed();
 }
 
-void FlightState_Update(float currentAltitude, bool navOk, float dT)
+void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT)
 {
     float dtMs = dT * 1000.0f;
+    s_altOk = altOk;
 
     /* ARM qua Bluetooth (bench): bỏ qua SBUS, chỉ đếm thời gian an toàn */
     if (s_btArmed) {
@@ -220,6 +223,24 @@ void FlightState_Update(float currentAltitude, bool navOk, float dT)
         } else {
             s_armTimer = 0.0f;
         }
+        return;
+    }
+
+    /* Failsafe độ cao: đang bay mà mất ước lượng độ cao → hạ cánh mù.
+     * Trong LAND_BLIND bỏ qua mọi cần trừ cử chỉ DISARM (đã xử lý ở trên);
+     * độ cao khỏe lại → giữ độ cao tại chỗ. */
+    if (s_state == FLIGHT_STATE_LAND_BLIND) {
+        s_lastThr = thr;
+        if (altOk) {
+            s_targetAltitude = currentAltitude;
+            s_state = s_holdState = FLIGHT_STATE_ALT_HOLD;
+        }
+        return;
+    }
+    if (!altOk && FlightState_IsAirborne(s_state)) {
+        Timer5_Stop();
+        s_lastThr = thr;
+        s_state = FLIGHT_STATE_LAND_BLIND;
         return;
     }
 
@@ -304,7 +325,8 @@ bool FlightState_IsAirborne(FlightState_e state)
            state == FLIGHT_STATE_POS_HOLD     ||
            state == FLIGHT_STATE_LAND         ||
            state == FLIGHT_STATE_MOVE_FORWARD ||
-           state == FLIGHT_STATE_MOVE_LEFT;
+           state == FLIGHT_STATE_MOVE_LEFT    ||
+           state == FLIGHT_STATE_LAND_BLIND;
 }
 
 const char *FlightState_Name(FlightState_e state)
@@ -318,6 +340,7 @@ const char *FlightState_Name(FlightState_e state)
         case FLIGHT_STATE_LAND:         return "LAND";
         case FLIGHT_STATE_MOVE_FORWARD: return "FORWARD";
         case FLIGHT_STATE_MOVE_LEFT:    return "LEFT";
+        case FLIGHT_STATE_LAND_BLIND:   return "LANDBLIND";
         default:                        return "?";
     }
 }

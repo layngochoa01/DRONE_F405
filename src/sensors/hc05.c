@@ -75,6 +75,8 @@ HC05_StreamState HC05_Poll(void)
             else if (strcmp(cmd_buf, "LOGMAG") == 0)    { calib_cmd = HC05_CMD_LOG_MAG; }
             else if (strcmp(cmd_buf, "LOGGPS") == 0)    { calib_cmd = HC05_CMD_LOG_GPS; }
             else if (strcmp(cmd_buf, "LOGNORM") == 0)   { calib_cmd = HC05_CMD_LOG_NORMAL; }
+            else if (strcmp(cmd_buf, "LOGPERF") == 0)   { calib_cmd = HC05_CMD_LOG_PERF; }
+            else if (strcmp(cmd_buf, "GPSCSV") == 0)    { calib_cmd = HC05_CMD_LOG_GPSCSV; }
             else if (strcmp(cmd_buf, "MAGCAL") == 0)    { calib_cmd = HC05_CMD_MAGCAL; }
             else if (strcmp(cmd_buf, "MAGCALEND") == 0) { calib_cmd = HC05_CMD_MAGCAL_END; }
             else if (strcmp(cmd_buf, "CALIBSHOW") == 0) { calib_cmd = HC05_CMD_CALIB_SHOW; }

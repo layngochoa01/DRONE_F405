@@ -9,21 +9,23 @@
 /* =========================================================
  * Điều khiển bay nhiều vòng lồng nhau (cascaded control)
  *
- *  RC/SBUS → STATE ─┬─ Vòng độ cao Z  (25 Hz) ── ga ───────────────┐
- *                   ├─ Vòng vị trí XY (10 Hz) ── roll, pitch ─┐     │
- *                   └─ Vòng yaw       (25 Hz) ── yaw ─────────┤     │
- *                                     Quaternion mục tiêu ◄───┘     │
- *                                     Điều khiển tư thế (100 Hz)    │
- *                                     Vòng rate PID     (100 Hz)    │
- *                                     Motor mixer ◄─────────────────┘
- *                                     PWM → ESC
+ *  VÒNG NHANH 2 kHz — trong ngắt DMA đọc IMU (FlightControl_FastUpdate):
+ *    IMU → AHRS → [cộng dồn gia tốc hệ trái đất]
+ *        → quaternion mục tiêu → điều khiển tư thế → rate PID → mixer → PWM
  *
- * Ước lượng: AHRS (gyro+accel+HMC5883L), độ cao (SPL06 + accel),
- *            vị trí/vận tốc (GPS + accel).
+ *  VÒNG CHẬM — trong main loop (FlightControl_SlowUpdate):
+ *    ~100 Hz : trung bình gia tốc → predict Kalman độ cao + ước lượng vị trí
+ *     25 Hz  : baro → update Kalman; STATE; vòng độ cao Z → ga; vòng yaw
+ *     25 Hz  : compass (lệch pha 20 ms với baro)
+ *     10 Hz  : vòng vị trí XY → roll, pitch
+ *    khi có  : GPS → update ước lượng vị trí
+ *
+ *  Vòng chậm ghi setpoint (roll, pitch, yaw, ga, cờ) cho vòng nhanh qua vùng găng.
  * ========================================================= */
 
-#define FC_LOOP_HZ        100U
+#define FC_LOOP_HZ        2000U
 #define FC_DT             (1.0f / (float)FC_LOOP_HZ)
+#define FC_ACCEL_BLOCK    20U     /* số mẫu IMU gộp cho 1 lần predict (~100 Hz) */
 
 /* Kênh SBUS (chỉ số từ 0) */
 #define FC_CH_ROLL        0U
@@ -53,8 +55,19 @@ typedef struct {
 /* baroOk / magOk: kết quả init cảm biến */
 void FlightControl_Init(bool baroOk, bool magOk);
 
-/* Gọi mỗi khi có mẫu IMU mới (100 Hz), data đã remap + calib + lọc */
-void FlightControl_Update(const ICM42605_Data *data);
+/* Vòng nhanh — gọi TRONG NGẮT mỗi mẫu IMU (2 kHz), data đã remap + calib + lọc.
+ * Không được gọi hàm chặn (I2C, UART) từ đây. */
+void FlightControl_FastUpdate(const ICM42605_Data *data);
+
+/* Vòng chậm — gọi liên tục trong main loop, tự chia nhịp theo SysTick */
+void FlightControl_SlowUpdate(void);
+
+/* Đo tải vòng nhanh (µs). resetMax = true: xóa giá trị lớn nhất sau khi đọc */
+typedef struct {
+    float execUs, execMaxUs;        /* thời gian xử lý 1 lượt */
+    float periodMinUs, periodMaxUs; /* khoảng cách giữa 2 mẫu IMU */
+} FlightControl_Perf_t;
+void FlightControl_GetPerf(FlightControl_Perf_t *out, bool resetMax);
 
 const FlightControl_Status_t *FlightControl_GetStatus(void);
 

@@ -81,6 +81,7 @@
 #define ICM_GYRO_FSR_1000DPS        (0x1U << 5) /* ±1000 dps */
 #define ICM_GYRO_FSR_500DPS         (0x2U << 5) /* ±500  dps */
 #define ICM_GYRO_FSR_250DPS         (0x3U << 5) /* ±250  dps */
+#define ICM_GYRO_ODR_4KHZ           (0x4U << 0) /* 4kHz */
 #define ICM_GYRO_ODR_1KHZ           (0x6U << 0) /* 1kHz */
 #define ICM_GYRO_ODR_200HZ          (0x7U << 0) /* 200Hz */
 
@@ -89,6 +90,7 @@
 #define ICM_ACCEL_FSR_8G            (0x1U << 5) /* ±8g  */
 #define ICM_ACCEL_FSR_4G            (0x2U << 5) /* ±4g  */
 #define ICM_ACCEL_FSR_2G            (0x3U << 5) /* ±2g  */
+#define ICM_ACCEL_ODR_4KHZ          (0x4U << 0) /* 4kHz */
 #define ICM_ACCEL_ODR_1KHZ          (0x6U << 0) /* 1kHz */
 #define ICM_ACCEL_ODR_200HZ         (0x7U << 0) /* 200Hz */
 
@@ -164,8 +166,17 @@ uint8_t ICM42605_IsDataReady(void);
 
 void ICM42605_GetLatestData(ICM42605_Data *out);
 
-#define CALIB_GYRO_MORON_THRESHOLD   1.0f
-#define CALIB_ACC_MORON_THRESHOLD    (9.81f * 0.05f)
+/* Gọi trong ngắt DMA mỗi khi đọc xong 1 mẫu (đã đổi đơn vị, CHƯA remap).
+ * Dùng để chạy vòng điều khiển nhanh ngay trong ngắt. */
+typedef void (*ICM42605_SampleCallback)(const ICM42605_Data *sample);
+void ICM42605_SetSampleCallback(ICM42605_SampleCallback cb);
+
+/* Calib: drone coi là đứng yên khi độ lệch chuẩn của cả lô mẫu dưới ngưỡng.
+ * Nhiễu gyro ICM-42605 khi đứng yên ~0.1–0.2 °/s, accel ~0.02 m/s². */
+#define CALIB_GYRO_STD_MAX           1.5f     /* °/s — đo thực tế đứng yên 0.4–0.8 (ODR 4 kHz) */
+#define CALIB_ACC_STD_MAX            0.10f    /* m/s² */
+#define CALIB_MAX_ATTEMPTS           3U
+#define CALIB_TIMEOUT_MS             5000U
 #define CALIB_MIN_VALID_SAMPLES      100U
 
 typedef struct {

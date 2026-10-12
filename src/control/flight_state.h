@@ -41,6 +41,7 @@ typedef enum {
     FLIGHT_STATE_LAND,
     FLIGHT_STATE_MOVE_FORWARD,
     FLIGHT_STATE_MOVE_LEFT,
+    FLIGHT_STATE_LAND_BLIND,    /* failsafe: mất độ cao → hạ ga dần, không dùng baro */
 } FlightState_e;
 
 #define CLIMB_STEP_METERS     1.0f
@@ -49,8 +50,10 @@ typedef enum {
 #define MOVE_SPEED_MS         1.0f    /* vận tốc khi FORWARD / LEFT */
 
 void FlightState_Init(void);
-/* navOk: GPS hợp lệ + compass hoạt động (cho phép POS_HOLD / MOVE) */
-void FlightState_Update(float currentAltitude, bool navOk, float dT);
+/* navOk: GPS hợp lệ + compass hoạt động (cho phép POS_HOLD / MOVE)
+ * altOk: ước lượng độ cao khỏe (AltitudeKF_IsHealthy). Đang bay mà mất → LAND_BLIND;
+ *        dưới đất mà mất → không cho CLIMB. */
+void FlightState_Update(float currentAltitude, bool navOk, bool altOk, float dT);
 FlightState_e FlightState_Get(void);
 float FlightState_GetTargetAltitude(void);
 bool FlightState_MotorsEnabled(void);

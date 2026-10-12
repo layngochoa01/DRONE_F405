@@ -26,6 +26,8 @@ typedef enum {
     HC05_CMD_LOG_NORMAL  = 11,
     HC05_CMD_MAGCAL      = 12,
     HC05_CMD_MAGCAL_END  = 13,
+    HC05_CMD_LOG_PERF    = 14,
+    HC05_CMD_LOG_GPSCSV  = 15,
 } HC05_CalibCmd;
 
 typedef enum {

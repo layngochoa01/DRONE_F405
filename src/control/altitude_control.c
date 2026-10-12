@@ -74,3 +74,9 @@ float AltitudeControl_GetVelSetpoint(void)
 {
     return s_velSetpoint;
 }
+
+void AltitudeControl_SeedThrottle(float throttle)
+{
+    s_lastThrottle = throttle;
+    s_wasActive    = false;
+}
