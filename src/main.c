@@ -301,12 +301,12 @@ int main(){
 #if GPS_ENABLE
     GPS_Init();
 #endif
-    delay_ms(15000);
+    delay_ms(10000);
     spl06_ready = SPL06_Init();
     AltitudeBaro_Init(101325.0f);
 
     if (spl06_ready) {
-        delay_ms(8000);
+        delay_ms(5000);
         altitude_calibrate_baseline();
     }
 
@@ -355,7 +355,8 @@ int main(){
     Timer7_Start();
 
     uint32_t last_log = 0;
-    enum { LOG_NORMAL, LOG_MAG, LOG_GPS, LOG_PERF, LOG_GPSCSV } log_mode = LOG_NORMAL;
+    enum { LOG_NORMAL, LOG_MAG, LOG_GPS, LOG_PERF, LOG_GPSCSV, LOG_MAGCSV } log_mode = LOG_NORMAL;
+    uint32_t mag_prev_age = 0xFFFFFFFFU;
     uint32_t gps_log_pvt = 0;
     uint32_t gps_stat_ms = 0;
 
@@ -382,6 +383,11 @@ int main(){
             UART5_WriteString("# GPSCSV G,t_ms,iTOW,fixType,flags,numSV,latE7,lonE7,hMSL_mm,hAcc_mm,"
                               "vAcc_mm,velN_mmps,velE_mmps,velD_mmps,gSpeed_mmps,sAcc_mmps,pDOP\r\n");
             UART5_WriteString("# GPSCSV S,bytes,packets,pvt,badChecksum,resync,fixType,numSV\r\n");
+        }
+        if (cmd == HC05_CMD_LOG_MAGCSV) {
+            log_mode = LOG_MAGCSV;
+            mag_prev_age = 0xFFFFFFFFU;
+            UART5_WriteString("# MAGCSV M,t_ms,rawX,rawY,rawZ,heading_deg,roll_deg,pitch_deg,yaw_deg\r\n");
         }
         if (cmd == HC05_CMD_MAGCAL) {
             if (FlightState_Get() == FLIGHT_STATE_DISARMED && Compass_GetType() != COMPASS_NONE) {
@@ -434,8 +440,20 @@ int main(){
             }
         }
 
+        uint32_t mag_age;
+        const Compass_Data_t *mag = FlightControl_GetCompass(&mag_age);
+        bool mag_new = (mag_age < mag_prev_age);
+        mag_prev_age = mag_age;
+
         if (HC05_GetStreamState() == HC05_STREAM_RUN) {
-            if (log_mode == LOG_GPSCSV) {
+            if (log_mode == LOG_MAGCSV) {
+                if (mag_new && mag_age != 0xFFFFFFFFU) {
+                    const Attitude_t *att = Attitude_Get();
+                    UART5_WriteF("M,%lu,%.4f,%.4f,%.4f,%.1f,%.1f,%.1f,%.1f\r\n",
+                                 (unsigned long)now, mag->rawX, mag->rawY, mag->rawZ,
+                                 mag->headingDeg, att->roll, att->pitch, att->yaw);
+                }
+            } else if (log_mode == LOG_GPSCSV) {
                 const GPS_Stats_t *gs = GPS_GetStats();
                 if (gs->pvt != gps_log_pvt) {
                     gps_log_pvt = gs->pvt;

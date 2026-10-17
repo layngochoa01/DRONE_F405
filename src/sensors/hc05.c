@@ -44,7 +44,8 @@ HC05_StreamState HC05_Poll(void)
             else if (strcmp(cmd_buf, "LOGNORM") == 0)   { calib_cmd = HC05_CMD_LOG_NORMAL; }
             else if (strcmp(cmd_buf, "LOGPERF") == 0)   { calib_cmd = HC05_CMD_LOG_PERF; }
             else if (strcmp(cmd_buf, "GPSCSV") == 0)    { calib_cmd = HC05_CMD_LOG_GPSCSV; }
-            else if (strcmp(cmd_buf, "MAGCAL") == 0)    { calib_cmd = HC05_CMD_MAGCAL; }
+            else if (strcmp(cmd_buf, "LOGMAGCSV") == 0) { calib_cmd = HC05_CMD_LOG_MAGCSV; }
+            else if (strcmp(cmd_buf, "MAGCAL") == 0)   { calib_cmd = HC05_CMD_MAGCAL; }
             else if (strcmp(cmd_buf, "MAGCALEND") == 0) { calib_cmd = HC05_CMD_MAGCAL_END; }
             else if (strcmp(cmd_buf, "CALIBSHOW") == 0) { calib_cmd = HC05_CMD_CALIB_SHOW; }
             else if (strcmp(cmd_buf, "CALIB") == 0) { calib_cmd = HC05_CMD_CALIB; UART5_WriteString("OK CALIB \r\n");}

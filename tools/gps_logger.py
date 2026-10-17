@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--max-hacc", type=int, default=3000, help="hAcc tối đa, mm (mặc định 3000)")
     args = ap.parse_args()
 
-    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOG")
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "LOG_GPS")
     os.makedirs(log_dir, exist_ok=True)
     output_name = os.path.basename(args.output) if args.output else time.strftime("gps_log_%Y%m%d_%H%M%S.csv")
 
